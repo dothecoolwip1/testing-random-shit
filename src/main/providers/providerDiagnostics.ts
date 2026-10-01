@@ -16,6 +16,7 @@ interface ProviderDefinition {
   displayName: string;
   command: string;
   installCommand: string;
+  postInstallLaunchCommand: string;
 }
 
 const PROVIDERS: ProviderDefinition[] = [
@@ -24,18 +25,24 @@ const PROVIDERS: ProviderDefinition[] = [
     displayName: "OpenAI Codex",
     command: "codex",
     installCommand: "npm.cmd install -g @openai/codex@latest",
+    postInstallLaunchCommand:
+      "$p = Join-Path $env:APPDATA 'npm\\codex.cmd'; if (Test-Path $p) { & $p } else { codex }",
   },
   {
     id: "claude",
     displayName: "Claude Code",
     command: "claude",
     installCommand: "irm https://claude.ai/install.ps1 | iex",
+    postInstallLaunchCommand:
+      "$p = Join-Path $env:USERPROFILE '.local\\bin\\claude.exe'; if (Test-Path $p) { & $p } else { claude }",
   },
   {
     id: "antigravity",
     displayName: "Google Antigravity",
     command: "agy",
     installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
+    postInstallLaunchCommand:
+      "$p = Join-Path $env:USERPROFILE '.local\\bin\\agy.exe'; if (Test-Path $p) { & $p } else { agy }",
   },
 ];
 
@@ -320,8 +327,11 @@ export async function installProvider(
       "Write-Host ''",
       provider.installCommand,
       "Write-Host ''",
-      `Write-Host 'Installation command finished. Leave this window open if the installer requests input.' -ForegroundColor Green`,
-      `Write-Host 'Return to AI Coding Cockpit and click Run diagnostics again.' -ForegroundColor Green`,
+      `Write-Host 'Installation command finished. Starting ${provider.displayName} so you can complete sign-in.' -ForegroundColor Green`,
+      "Write-Host ''",
+      provider.postInstallLaunchCommand,
+      "Write-Host ''",
+      `Write-Host 'When sign-in is complete, return to AI Coding Cockpit and click Run diagnostics again.' -ForegroundColor Green`,
     ],
   );
 
