@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -268,34 +268,43 @@ export async function runProviderDiagnostics(): Promise<ProviderDiagnosticsResul
   };
 }
 
-function launchPowerShell(
+async function launchPowerShell(
   title: string,
   body: string[],
-): void {
-  const script = [
+): Promise<void> {
+  const innerScript = [
     `$Host.UI.RawUI.WindowTitle = ${quotePowerShell(title)}`,
     "Write-Host ''",
     ...body,
   ].join("; ");
 
-  const child = spawn(
+  const encoded = Buffer.from(innerScript, "utf16le").toString("base64");
+
+  const startScript = [
+    "$argsList = @(",
+    "'-NoLogo',",
+    "'-NoExit',",
+    "'-ExecutionPolicy',",
+    "'Bypass',",
+    "'-EncodedCommand',",
+    quotePowerShell(encoded),
+    ")",
+    "Start-Process -FilePath 'powershell.exe' -ArgumentList $argsList -WindowStyle Normal",
+  ].join(" ");
+
+  const result = await run(
     "powershell.exe",
-    [
-      "-NoLogo",
-      "-NoExit",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      script,
-    ],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: false,
-    },
+    ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", startScript],
+    8000,
   );
 
-  child.unref();
+  if (result.code !== 0) {
+    throw new Error(
+      result.stderr ||
+        result.stdout ||
+        "Windows could not open a visible PowerShell window.",
+    );
+  }
 }
 
 export async function installProvider(
@@ -320,7 +329,7 @@ export async function installProvider(
     };
   }
 
-  launchPowerShell(
+  await launchPowerShell(
     `AI Coding Cockpit - Install ${provider.displayName}`,
     [
       `Write-Host 'Installing ${provider.displayName} using the provider\'s official Windows installation method.' -ForegroundColor Cyan`,
@@ -364,7 +373,7 @@ export async function openProviderLogin(
     };
   }
 
-  launchPowerShell(
+  await launchPowerShell(
     `AI Coding Cockpit - ${provider.displayName}`,
     [
       `Write-Host 'Opening ${provider.displayName}. Complete the official provider sign-in flow if prompted.' -ForegroundColor Cyan`,

@@ -81,3 +81,8 @@ Verify the privileged preload bridge, repository picker, and provider diagnostic
 8. Integrate one real provider task execution, starting with the cleanest installed CLI automation surface.
 9. Capture Git diff and verification evidence.
 10. Require user approval before commit.
+
+
+## Windows installer launch fix
+
+Provider installer/login terminals now use PowerShell Start-Process with an encoded command instead of a detached Node child process. This explicitly creates a visible console window on Windows and returns launch failures to the cockpit UI instead of silently reporting success.
