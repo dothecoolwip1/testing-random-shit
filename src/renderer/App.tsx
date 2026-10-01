@@ -44,6 +44,7 @@ export function App() {
       Boolean(
         window.cockpit?.runSimulator &&
           window.cockpit?.runProviderDiagnostics &&
+          window.cockpit?.installProvider &&
           window.cockpit?.openProviderLogin &&
           window.cockpit?.selectProject,
       ),
@@ -108,6 +109,61 @@ export function App() {
       const diagnostics = await window.cockpit.runProviderDiagnostics();
       setProviderDiagnostics(diagnostics);
       setProviderMessage("Provider diagnostics completed.");
+    } catch (cause) {
+      setProviderMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProviderBusy(false);
+    }
+  }
+
+  async function installProvider(providerId: ProviderId) {
+    if (!window.cockpit?.installProvider) {
+      setProviderMessage("The Electron bridge is not available.");
+      return;
+    }
+
+    setProviderBusy(true);
+    setProviderMessage(null);
+
+    try {
+      const launch = await window.cockpit.installProvider(providerId);
+      setProviderMessage(launch.message);
+    } catch (cause) {
+      setProviderMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProviderBusy(false);
+    }
+  }
+
+  async function installMissingProviders() {
+    if (!window.cockpit?.installProvider) {
+      setProviderMessage("The Electron bridge is not available.");
+      return;
+    }
+
+    const missing =
+      providerDiagnostics?.providers.filter((provider) => !provider.installed) ?? [];
+
+    if (missing.length === 0) {
+      setProviderMessage(
+        providerDiagnostics
+          ? "All detected providers are already installed."
+          : "Run diagnostics first so the cockpit knows what is missing.",
+      );
+      return;
+    }
+
+    setProviderBusy(true);
+    setProviderMessage(null);
+
+    try {
+      for (const provider of missing) {
+        await window.cockpit.installProvider(provider.id);
+      }
+
+      setProviderMessage(
+        `Opened ${missing.length} official installer terminal(s). Complete any prompts, then click Run diagnostics again.`,
+      );
     } catch (cause) {
       setProviderMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -371,15 +427,25 @@ export function App() {
         )}
 
         <div className="provider-actions">
-          <button
-            className="secondary"
-            disabled={!installed || providerBusy || !bridgeAvailable}
-            onClick={() => openProvider(providerId)}
-          >
-            {providerId === "codex"
-              ? "Open / Sign in with ChatGPT"
-              : "Open / Sign in"}
-          </button>
+          {installed ? (
+            <button
+              className="secondary"
+              disabled={providerBusy || !bridgeAvailable}
+              onClick={() => openProvider(providerId)}
+            >
+              {providerId === "codex"
+                ? "Open / Sign in with ChatGPT"
+                : "Open / Sign in"}
+            </button>
+          ) : (
+            <button
+              className="secondary"
+              disabled={providerBusy || !bridgeAvailable}
+              onClick={() => installProvider(providerId)}
+            >
+              Install
+            </button>
+          )}
         </div>
       </div>
     );
@@ -393,13 +459,22 @@ export function App() {
             <span className="eyebrow">AGENTS</span>
             <h1>AI Providers</h1>
           </div>
-          <button
-            className="primary inline-primary"
-            disabled={providerBusy || !bridgeAvailable}
-            onClick={diagnoseProviders}
-          >
-            {providerBusy ? "Checking…" : "Run diagnostics"}
-          </button>
+          <div className="page-heading-actions">
+            <button
+              className="secondary"
+              disabled={providerBusy || !bridgeAvailable}
+              onClick={installMissingProviders}
+            >
+              Install missing
+            </button>
+            <button
+              className="primary inline-primary"
+              disabled={providerBusy || !bridgeAvailable}
+              onClick={diagnoseProviders}
+            >
+              {providerBusy ? "Working…" : "Run diagnostics"}
+            </button>
+          </div>
         </div>
 
         <p className="lead">

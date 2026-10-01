@@ -116,6 +116,12 @@ nav { display: grid; gap: 4px; }
   gap: 24px;
 }
 
+.page-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .lead {
   margin: 0 0 28px;
   max-width: 760px;

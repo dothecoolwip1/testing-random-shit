@@ -34,6 +34,9 @@ Phase 1 foundation moving into real local project and provider discovery.
 - installed version and help probing
 - Codex login status probing
 - official interactive provider launch in a separate PowerShell window
+- official Windows installer launch for missing Codex, Claude Code, and Antigravity clients
+- install-all-missing provider action
+- PATH-independent fallback detection for common Windows install locations
 - no browser-session scraping and no credential copying
 
 ## Provider connection behavior

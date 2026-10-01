@@ -11,6 +11,7 @@ declare global {
     cockpit?: {
       runSimulator(): Promise<SimulatorRunResult>;
       runProviderDiagnostics(): Promise<ProviderDiagnosticsResult>;
+      installProvider(providerId: ProviderId): Promise<ProviderLaunchResult>;
       openProviderLogin(providerId: ProviderId): Promise<ProviderLaunchResult>;
       selectProject(): Promise<ProjectInspection | null>;
     };

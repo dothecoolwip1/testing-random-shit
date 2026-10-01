@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import type { ProviderId } from "../../shared/providers.js";
 import {
+  installProvider,
   openProviderLogin,
   runProviderDiagnostics,
 } from "../providers/providerDiagnostics.js";
@@ -23,6 +24,13 @@ export function registerIpc(): void {
   ipcMain.handle("cockpit:provider-diagnostics", async () => {
     return runProviderDiagnostics();
   });
+
+  ipcMain.handle(
+    "cockpit:provider-install",
+    async (_event, providerId: unknown) => {
+      return installProvider(assertProviderId(providerId));
+    },
+  );
 
   ipcMain.handle(
     "cockpit:provider-open-login",

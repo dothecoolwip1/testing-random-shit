@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("cockpit", {
   runProviderDiagnostics: (): Promise<ProviderDiagnosticsResult> =>
     ipcRenderer.invoke("cockpit:provider-diagnostics"),
 
+  installProvider: (providerId: ProviderId): Promise<ProviderLaunchResult> =>
+    ipcRenderer.invoke("cockpit:provider-install", providerId),
+
   openProviderLogin: (providerId: ProviderId): Promise<ProviderLaunchResult> =>
     ipcRenderer.invoke("cockpit:provider-open-login", providerId),
 
