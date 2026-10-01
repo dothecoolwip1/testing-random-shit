@@ -16,38 +16,50 @@ Implemented in source:
 - evidence-based completion gate
 - initial command risk classifier
 - Electron main process configured with context isolation, sandboxing, and no renderer Node integration
+- sandbox-compatible CommonJS preload bundle built with esbuild
 - preload bridge exposing only the simulator action
 - React cockpit shell with sidebar, top status area, timeline, and right-side inspector
 - simulator vertical slice that runs architect, builder, reviewer, repair, verification, and READY_FOR_USER gating
 - unit test source for orchestration and command policy
 
+## Runtime verification
+
+Verified on Windows by the user:
+
+- npm dependency installation completed
+- Vite renderer started successfully
+- TypeScript Electron compilation reported 0 errors
+- Electron desktop window launched successfully
+
+A runtime issue was then observed: the renderer reported `window.cockpit` as undefined because the sandboxed preload was emitted as ESM JavaScript. The source has now been changed to bundle preload code into `dist-electron/preload/index.cjs` and the BrowserWindow points to that file.
+
+The preload fix still needs to be pulled and verified on the target machine.
+
 ## Current work
 
-The foundation needs to be installed and run on the target Windows environment so compiler, runtime, and Electron issues can be fixed against the actual machine.
+Verify the CommonJS preload fix and confirm the simulator button completes the deterministic run.
 
 ## Known problems
 
-- This commit has not been executed or visually verified on the target machine.
-- Dependency versions have not yet been reconciled with the target machine's installed Node version.
-- The development Electron launch flow has not been tested on Windows.
-- The command policy is intentionally conservative and incomplete.
-- The simulator uses in-memory persistence.
+- SQLite persistence is not implemented.
 - Provider discovery is not implemented.
 - Repository selection is not implemented.
 - Git worktree isolation is not implemented.
+- Diff viewing is not implemented.
+- Real Codex/Claude/Antigravity adapters are not implemented.
 
 ## Next steps
 
-1. Install dependencies and run typecheck.
-2. Run Vitest suite.
-3. Build Electron main/preload and Vite renderer.
-4. Launch the desktop application on Windows and inspect console/runtime errors.
-5. Add SQLite with migrations and replace InMemoryTaskStore for persisted tasks.
-6. Add repository selection and project inspection.
-7. Add Git status safety checks and worktree creation.
-8. Probe locally installed Codex and Claude Code versions and help output.
-9. Implement one real provider adapter only after local probing.
-10. Add diff capture and verification command execution.
+1. Pull the preload fix and run `npm.cmd install`.
+2. Run `npm.cmd run typecheck`.
+3. Run `npm.cmd test`.
+4. Run `npm.cmd run build`.
+5. Launch with `npm.cmd run dev`.
+6. Verify the simulator reaches READY_FOR_USER.
+7. Add SQLite persistence.
+8. Add repository selection and project inspection.
+9. Add Git status safety checks and worktree creation.
+10. Probe locally installed Codex and Claude Code versions/help output before implementing one real provider.
 
 ## Important architectural decisions
 
@@ -56,34 +68,6 @@ The foundation needs to be installed and run on the target Windows environment s
 - Agents exchange structured artifacts instead of unrestricted chat histories.
 - Completion requires passing criteria, verification evidence, and no open blocker/high findings.
 - Renderer code does not receive arbitrary shell access.
+- The Electron sandbox remains enabled; the preload is bundled to CommonJS rather than disabling sandbox security.
 - Real provider command syntax will not be hardcoded until local tooling has been inspected.
 - No consumer web UI scraping or unofficial authentication will be used.
-
-## Verification performed
-
-No runtime verification has been performed in this chat environment.
-
-The source has been constructed to be internally coherent, but it must not be described as tested, building, or production-ready until the actual target environment runs:
-
-- `npm install`
-- `npm run typecheck`
-- `npm test`
-- `npm run build`
-- `npm run dev`
-
-## First vertical slice target
-
-The first fully verified slice remains:
-
-1. select a local repository
-2. create task
-3. simulator architect produces criteria
-4. simulator builder performs a controlled simulated change
-5. verification runs
-6. simulator reviewer creates finding
-7. repair cycle resolves finding
-8. criteria pass
-9. diff is shown
-10. user approves
-
-This commit implements the orchestration/simulator core and UI proof, but repository selection, real file change simulation, diff display, persistence, and user approval are still outstanding.

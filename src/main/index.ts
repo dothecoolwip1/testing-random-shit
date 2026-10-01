@@ -7,6 +7,8 @@ const currentFile = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFile);
 
 function createWindow(): void {
+  const preloadPath = path.join(currentDir, "../preload/index.cjs");
+
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -17,7 +19,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.join(currentDir, "../preload/index.js"),
+      preload: preloadPath,
     },
   });
 
@@ -31,6 +33,7 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerIpc();
   createWindow();
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

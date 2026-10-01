@@ -11,7 +11,14 @@ export function App() {
   async function runSimulator() {
     setRunning(true);
     setError(null);
+
     try {
+      if (!window.cockpit?.runSimulator) {
+        throw new Error(
+          "Electron preload bridge is unavailable. Restart the app after rebuilding the preload bundle.",
+        );
+      }
+
       setResult(await window.cockpit.runSimulator());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
