@@ -18,9 +18,13 @@ function createWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
       preload: preloadPath,
     },
+  });
+
+  window.webContents.on("preload-error", (_event, preload, error) => {
+    console.error("Cockpit preload failed", { preload, error });
   });
 
   if (!app.isPackaged) {

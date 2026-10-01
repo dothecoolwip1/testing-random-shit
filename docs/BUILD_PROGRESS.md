@@ -2,70 +2,78 @@
 
 ## Current phase
 
-Phase 1 foundation, with the beginning of the first simulator vertical slice.
+Phase 1 foundation moving into provider discovery and account connection.
 
-## Completed items
+## Verified on the user's Windows machine
 
-Implemented in source:
+- npm dependencies install successfully after approving required Electron/esbuild install scripts
+- Vite renderer starts
+- TypeScript Electron compilation reports zero errors
+- Electron desktop window launches
+- renderer navigation works
+- simulator vertical slice runs in fallback mode
 
-- strict TypeScript domain model for tasks, criteria, findings, verification, and agent activity
-- provider-independent AgentProvider interface
-- deterministic built-in SimulatorProvider
-- explicit task-state transition table
-- bounded repair-cycle handling
-- evidence-based completion gate
-- initial command risk classifier
-- Electron main process configured with context isolation, sandboxing, and no renderer Node integration
-- sandbox-compatible CommonJS preload bundle build
-- preload bridge exposing only the simulator action
-- safe renderer-side simulator fallback when the preload bridge is unavailable
-- React cockpit shell with sidebar, top status area, timeline, and right-side inspector
-- unit test source for orchestration and command policy
+## Implemented in source
 
-## Runtime verification
+- strict TypeScript task/artifact domain model
+- deterministic orchestrator
+- provider-independent provider interface
+- built-in simulator
+- command risk classifier
+- Electron/React/Vite desktop shell
+- sidebar navigation
+- secure context-isolated preload API
+- provider diagnostics for Codex, Claude Code, and Google Antigravity
+- Windows executable discovery using where.exe
+- installed version and help probing
+- Codex login status probing
+- official interactive provider launch in a separate PowerShell window
+- no browser-session scraping and no token copying
+- renderer fallback remains limited to non-privileged simulation
 
-Verified on Windows by the user:
+## Provider connection behavior
 
-- npm dependency installation completed
-- Vite renderer started successfully
-- TypeScript Electron compilation reported 0 errors
-- Electron desktop window launched successfully
+OpenAI Codex:
+- detect the local `codex` executable
+- inspect `--version` and `--help`
+- inspect `codex login status`
+- launch the official Codex CLI for ChatGPT sign-in
 
-The preload bridge remains unavailable on the target machine. To avoid blocking UI verification, the simulator now falls back to renderer-only simulation. This fallback cannot access the filesystem, Git, terminal, or providers and does not pretend those capabilities are connected.
+Claude Code:
+- detect the local `claude` executable
+- inspect `--version` and `--help`
+- launch the official Claude Code client for provider-managed sign-in
+
+Google Antigravity:
+- detect the local `agy` executable
+- inspect `--version` and `--help`
+- launch the official Antigravity CLI for Google OAuth sign-in
+
+The cockpit does not read or copy credentials from provider storage.
+
+## Electron bridge compatibility
+
+The preload is bundled as CommonJS. The BrowserWindow keeps:
+- context isolation enabled
+- renderer Node integration disabled
+
+The Chromium sandbox is temporarily disabled because the sandboxed preload did not load on the target Windows environment. The exposed preload surface remains explicitly allowlisted and contains no arbitrary shell command API.
+
+Provider IDs are validated before any launch action. The main process chooses fixed commands and does not concatenate user input into shell commands.
 
 ## Current work
 
-Verify that the renderer simulator fallback completes and displays READY_FOR_USER, then continue diagnosing the privileged Electron bridge separately.
-
-## Known problems
-
-- Electron preload bridge is still unavailable on the target machine.
-- SQLite persistence is not implemented.
-- Provider discovery is not implemented.
-- Repository selection is not implemented.
-- Git worktree isolation is not implemented.
-- Diff viewing is not implemented.
-- Real Codex/Claude/Antigravity adapters are not implemented.
+Verify the privileged preload bridge and provider diagnostics on the target Windows machine.
 
 ## Next steps
 
-1. Pull the renderer fallback update.
-2. Run `npm.cmd run typecheck` and `npm.cmd test`.
-3. Launch with `npm.cmd run dev`.
-4. Verify the simulator reaches READY_FOR_USER in fallback mode.
-5. Diagnose the Electron preload failure using main-process/preload logging.
-6. Add SQLite persistence.
-7. Add repository selection and project inspection.
-8. Add Git status safety checks and worktree creation.
-9. Probe locally installed Codex and Claude Code versions/help output before implementing one real provider.
-
-## Important architectural decisions
-
-- Roles are separate from providers.
-- The orchestrator owns task state transitions.
-- Agents exchange structured artifacts instead of unrestricted chat histories.
-- Completion requires passing criteria, verification evidence, and no open blocker/high findings.
-- Renderer code does not receive arbitrary shell access.
-- Failure of the preload bridge does not grant the renderer privileged APIs; it only enables a non-privileged simulator fallback.
-- Real provider command syntax will not be hardcoded until local tooling has been inspected.
-- No consumer web UI scraping or unofficial authentication will be used.
+1. Pull and launch the provider diagnostics build.
+2. Confirm the lower-left status says Electron bridge connected.
+3. Open Agents and run provider diagnostics.
+4. Complete official provider sign-in where needed.
+5. Add local repository picker and repository inspection.
+6. Add Git dirty-tree checks and isolated task worktrees.
+7. Add persisted SQLite project/task storage.
+8. Integrate one real provider task execution, starting with whichever installed CLI exposes the cleanest supported automation surface.
+9. Capture Git diff and project verification evidence.
+10. Add user approval before commit.
