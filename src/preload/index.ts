@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { SimulatorRunResult } from "../shared/domain.js";
+import type { ProjectInspection } from "../shared/projects.js";
 import type {
   ProviderDiagnosticsResult,
   ProviderId,
@@ -15,4 +16,7 @@ contextBridge.exposeInMainWorld("cockpit", {
 
   openProviderLogin: (providerId: ProviderId): Promise<ProviderLaunchResult> =>
     ipcRenderer.invoke("cockpit:provider-open-login", providerId),
+
+  selectProject: (): Promise<ProjectInspection | null> =>
+    ipcRenderer.invoke("cockpit:project-select"),
 });

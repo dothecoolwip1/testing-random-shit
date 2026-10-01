@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { SimulatorRunResult } from "../shared/domain";
+import type { ProjectInspection } from "../shared/projects";
 import type {
   ProviderDiagnostic,
   ProviderDiagnosticsResult,
@@ -28,6 +29,11 @@ export function App() {
   const [result, setResult] = useState<SimulatorRunResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [project, setProject] = useState<ProjectInspection | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectMessage, setProjectMessage] = useState<string | null>(null);
+
   const [providerDiagnostics, setProviderDiagnostics] =
     useState<ProviderDiagnosticsResult | null>(null);
   const [providerBusy, setProviderBusy] = useState(false);
@@ -38,7 +44,8 @@ export function App() {
       Boolean(
         window.cockpit?.runSimulator &&
           window.cockpit?.runProviderDiagnostics &&
-          window.cockpit?.openProviderLogin,
+          window.cockpit?.openProviderLogin &&
+          window.cockpit?.selectProject,
       ),
     [],
   );
@@ -60,6 +67,32 @@ export function App() {
     }
   }
 
+  async function chooseProject() {
+    if (!window.cockpit?.selectProject) {
+      setProjectMessage("Repository selection requires the Electron bridge.");
+      return;
+    }
+
+    setProjectBusy(true);
+    setProjectMessage(null);
+
+    try {
+      const selected = await window.cockpit.selectProject();
+      if (selected) {
+        setProject(selected);
+        setProjectMessage(
+          selected.dirty
+            ? `Opened ${selected.name}. Working tree has ${selected.changedFileCount} changed file(s); autonomous work must preserve them.`
+            : `Opened ${selected.name}. Git working tree is clean.`,
+        );
+      }
+    } catch (cause) {
+      setProjectMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
   async function diagnoseProviders() {
     if (!window.cockpit?.runProviderDiagnostics) {
       setProviderMessage(
@@ -76,9 +109,7 @@ export function App() {
       setProviderDiagnostics(diagnostics);
       setProviderMessage("Provider diagnostics completed.");
     } catch (cause) {
-      setProviderMessage(
-        cause instanceof Error ? cause.message : String(cause),
-      );
+      setProviderMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setProviderBusy(false);
     }
@@ -97,9 +128,7 @@ export function App() {
       const launch = await window.cockpit.openProviderLogin(providerId);
       setProviderMessage(launch.message);
     } catch (cause) {
-      setProviderMessage(
-        cause instanceof Error ? cause.message : String(cause),
-      );
+      setProviderMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setProviderBusy(false);
     }
@@ -190,9 +219,7 @@ export function App() {
             <span className="eyebrow">REVIEW FINDINGS</span>
             {(result?.task.artifacts.findings ?? []).map((finding) => (
               <div className="finding" key={finding.id}>
-                <strong>
-                  {finding.severity} · {finding.category}
-                </strong>
+                <strong>{finding.severity} · {finding.category}</strong>
                 <p>{finding.description}</p>
                 <small>{finding.status}</small>
               </div>
@@ -215,21 +242,101 @@ export function App() {
 
   function renderProjects() {
     return (
-      <section className="page">
-        <span className="eyebrow">PROJECTS</span>
-        <h1>Projects</h1>
-        <p className="lead">
-          Projects connect the cockpit to local Git repositories and hold project
-          commands, instructions, framework detection, and verification settings.
-        </p>
-        <div className="status-list">
+      <section className="page wide-page">
+        <div className="page-heading-row">
           <div>
-            <strong>Repository picker</strong>
-            <span>{bridgeAvailable ? "Bridge ready, implementation next" : "Requires Electron bridge"}</span>
+            <span className="eyebrow">PROJECTS</span>
+            <h1>Projects</h1>
           </div>
-          <div><strong>Git inspection</strong><span>Next milestone</span></div>
-          <div><strong>Framework detection</strong><span>Next milestone</span></div>
+          <button
+            className="primary inline-primary"
+            disabled={projectBusy || !bridgeAvailable}
+            onClick={chooseProject}
+          >
+            {projectBusy ? "Inspecting…" : project ? "Change repository" : "Open repository"}
+          </button>
         </div>
+
+        <p className="lead">
+          Select an existing local Git repository. The cockpit inspects it without
+          modifying files and surfaces the state needed before any agent is allowed
+          to work.
+        </p>
+
+        {!bridgeAvailable && (
+          <div className="notice">
+            Local repository access requires the Electron bridge.
+          </div>
+        )}
+
+        {projectMessage && <div className="provider-message">{projectMessage}</div>}
+
+        {!project ? (
+          <div className="empty">
+            No repository selected. Open a repository to inspect Git state,
+            frameworks, scripts, and project instruction files.
+          </div>
+        ) : (
+          <div className="project-details">
+            <div className="project-hero">
+              <div>
+                <span className="eyebrow">REPOSITORY</span>
+                <h2>{project.name}</h2>
+                <code>{project.repositoryPath}</code>
+              </div>
+              <span className={project.dirty ? "badge warning" : "badge ready"}>
+                {project.dirty
+                  ? `${project.changedFileCount} local change(s)`
+                  : "Working tree clean"}
+              </span>
+            </div>
+
+            <div className="status-list">
+              <div><strong>Current branch</strong><span>{project.branch}</span></div>
+              <div><strong>Default branch</strong><span>{project.defaultBranch ?? "Unknown"}</span></div>
+              <div><strong>Remote</strong><span className="mono-value">{project.remote ?? "No origin remote"}</span></div>
+              <div><strong>Package manager</strong><span>{project.packageManager ?? "Not detected"}</span></div>
+            </div>
+
+            <section className="project-section">
+              <span className="eyebrow">TECHNOLOGIES</span>
+              <div className="chip-row">
+                {project.frameworks.length > 0
+                  ? project.frameworks.map((framework) => (
+                      <span className="chip" key={framework}>{framework}</span>
+                    ))
+                  : <span className="muted">No common framework detected yet.</span>}
+              </div>
+            </section>
+
+            <section className="project-section">
+              <span className="eyebrow">PROJECT INSTRUCTIONS</span>
+              {project.instructionFiles.length > 0 ? (
+                <div className="file-list">
+                  {project.instructionFiles.map((file) => <code key={file}>{file}</code>)}
+                </div>
+              ) : (
+                <p className="muted">No standard instruction files detected at repository root/docs.</p>
+              )}
+            </section>
+
+            <section className="project-section">
+              <span className="eyebrow">PACKAGE SCRIPTS</span>
+              {Object.keys(project.scripts).length > 0 ? (
+                <div className="script-list">
+                  {Object.entries(project.scripts).map(([name, command]) => (
+                    <div key={name}>
+                      <strong>{name}</strong>
+                      <code>{command}</code>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">No package.json scripts detected.</p>
+              )}
+            </section>
+          </div>
+        )}
       </section>
     );
   }
@@ -248,7 +355,9 @@ export function App() {
             <strong>{providerLabels[providerId]}</strong>
             <p>
               {diagnostic?.version ??
-                (diagnostic ? providerInstallHints[providerId] : "Run diagnostics to inspect this machine.")}
+                (diagnostic
+                  ? providerInstallHints[providerId]
+                  : "Run diagnostics to inspect this machine.")}
             </p>
             {diagnostic?.executablePath && (
               <small className="provider-path">{diagnostic.executablePath}</small>
@@ -267,7 +376,9 @@ export function App() {
             disabled={!installed || providerBusy || !bridgeAvailable}
             onClick={() => openProvider(providerId)}
           >
-            {providerId === "codex" ? "Open / Sign in with ChatGPT" : "Open / Sign in"}
+            {providerId === "codex"
+              ? "Open / Sign in with ChatGPT"
+              : "Open / Sign in"}
           </button>
         </div>
       </div>
@@ -299,9 +410,9 @@ export function App() {
 
         {!bridgeAvailable && (
           <div className="notice">
-            Provider controls need the Electron bridge. The latest build switches
-            the preload to a compatibility mode while retaining context isolation
-            and keeping Node disabled in the renderer.
+            Provider controls need the Electron bridge. The latest build uses a
+            compatibility preload while retaining context isolation and keeping
+            Node disabled in the renderer.
           </div>
         )}
 
@@ -324,10 +435,10 @@ export function App() {
         <div className="provider-note">
           <strong>OpenAI account connection</strong>
           <p>
-            Click <em>Run diagnostics</em>. If Codex is installed, use
+            Run diagnostics. If Codex is installed, choose
             <em> Open / Sign in with ChatGPT</em>. The cockpit launches the
-            official Codex CLI in a separate terminal, where you complete the
-            provider's own login flow. Credentials remain managed by Codex.
+            official Codex CLI, where you complete its own login flow. The
+            cockpit never imports this chat's session cookies or tokens.
           </p>
         </div>
       </section>
@@ -388,7 +499,11 @@ export function App() {
           ].map((item) => (
             <div key={item} className="settings-row">
               <strong>{item}</strong>
-              <span>{item === "Providers" ? "Use Agents screen to diagnose" : "Not configured yet"}</span>
+              <span>
+                {item === "Providers"
+                  ? "Use Agents screen to diagnose"
+                  : "Not configured yet"}
+              </span>
             </div>
           ))}
         </div>
@@ -438,11 +553,11 @@ export function App() {
         <header className="topbar">
           <div>
             <span className="eyebrow">PROJECT</span>
-            <strong>Foundation workspace</strong>
+            <strong>{project?.name ?? "Foundation workspace"}</strong>
           </div>
           <div>
             <span className="eyebrow">BRANCH</span>
-            <strong>main</strong>
+            <strong>{project?.branch ?? "main"}</strong>
           </div>
           <div>
             <span className="eyebrow">STATUS</span>

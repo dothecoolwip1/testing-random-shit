@@ -143,8 +143,6 @@ nav { display: grid; gap: 4px; }
   line-height: 1.5;
 }
 
-.provider-message { border-style: solid; }
-
 .empty,
 .error {
   border: 1px dashed #343b45;
@@ -237,6 +235,88 @@ nav { display: grid; gap: 4px; }
   color: #89929e;
   font-size: 13px;
   text-align: right;
+  max-width: 65%;
+}
+
+.mono-value {
+  font-family: Consolas, "Courier New", monospace;
+  word-break: break-all;
+}
+
+.project-details {
+  border-top: 1px solid #292f36;
+}
+
+.project-hero {
+  padding: 20px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  border-bottom: 1px solid #292f36;
+}
+
+.project-hero h2 {
+  margin: 4px 0 8px;
+  font-size: 22px;
+}
+
+.project-hero code {
+  color: #7e8792;
+  word-break: break-all;
+}
+
+.project-section {
+  padding: 20px 0;
+  border-bottom: 1px solid #292f36;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  border: 1px solid #353c45;
+  background: #14191f;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: #c9ced5;
+}
+
+.file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.file-list code {
+  background: #14191f;
+  border: 1px solid #292f36;
+  padding: 6px 8px;
+  color: #aeb6c0;
+}
+
+.script-list {
+  margin-top: 12px;
+  border-top: 1px solid #292f36;
+}
+
+.script-list > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #222830;
+}
+
+.script-list code {
+  color: #929ca8;
+  overflow-wrap: anywhere;
 }
 
 .provider-stack {
@@ -311,6 +391,11 @@ nav { display: grid; gap: 4px; }
 .badge.ready {
   border-color: #315a42;
   color: #88d2a4;
+}
+
+.badge.warning {
+  border-color: #654c26;
+  color: #e7bd76;
 }
 
 @media (max-width: 1100px) {

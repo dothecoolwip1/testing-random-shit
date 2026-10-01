@@ -1,9 +1,10 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain } from "electron";
 import type { ProviderId } from "../../shared/providers.js";
 import {
   openProviderLogin,
   runProviderDiagnostics,
 } from "../providers/providerDiagnostics.js";
+import { inspectProject } from "../projects/projectInspector.js";
 import { runVerticalSlice } from "../simulator/runVerticalSlice.js";
 
 const providerIds = new Set<ProviderId>(["codex", "claude", "antigravity"]);
@@ -29,4 +30,22 @@ export function registerIpc(): void {
       return openProviderLogin(assertProviderId(providerId));
     },
   );
+
+  ipcMain.handle("cockpit:project-select", async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+      title: "Open Git Repository",
+      properties: ["openDirectory"] as const,
+    };
+
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    return inspectProject(result.filePaths[0]);
+  });
 }

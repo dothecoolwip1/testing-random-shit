@@ -23,9 +23,7 @@ const PROVIDERS: ProviderDefinition[] = [
 
 function definitionFor(providerId: ProviderId): ProviderDefinition {
   const provider = PROVIDERS.find((item) => item.id === providerId);
-  if (!provider) {
-    throw new Error(`Unsupported provider: ${providerId}`);
-  }
+  if (!provider) throw new Error(`Unsupported provider: ${providerId}`);
   return provider;
 }
 
@@ -48,10 +46,11 @@ async function run(
       stderr: String(stderr ?? "").trim(),
     };
   } catch (cause) {
-    const error = cause as NodeJS.ErrnoException & {
+    const error = cause as {
       code?: string | number;
       stdout?: string;
       stderr?: string;
+      message?: string;
     };
 
     return {
@@ -63,13 +62,9 @@ async function run(
 }
 
 async function findExecutable(command: string): Promise<string | undefined> {
-  if (process.platform === "win32") {
-    const result = await run("where.exe", [command], 3000);
-    if (result.code !== 0 || !result.stdout) return undefined;
-    return result.stdout.split(/\r?\n/).find(Boolean)?.trim();
-  }
+  const lookupCommand = process.platform === "win32" ? "where.exe" : "which";
+  const result = await run(lookupCommand, [command], 3000);
 
-  const result = await run("which", [command], 3000);
   if (result.code !== 0 || !result.stdout) return undefined;
   return result.stdout.split(/\r?\n/).find(Boolean)?.trim();
 }
@@ -164,7 +159,7 @@ function terminalScript(provider: ProviderDefinition): string {
   return [
     `$Host.UI.RawUI.WindowTitle = '${title.replaceAll("'", "''")}'`,
     "Write-Host ''",
-    `Write-Host 'Opening ${provider.displayName}. Complete the provider\'s official sign-in flow if prompted.' -ForegroundColor Cyan`,
+    `Write-Host 'Opening ${provider.displayName}. Complete the official provider sign-in flow if prompted.' -ForegroundColor Cyan`,
     "Write-Host ''",
     provider.command,
   ].join("; ");
@@ -188,8 +183,7 @@ export async function openProviderLogin(
     return {
       providerId,
       started: false,
-      message:
-        "Interactive provider launch is currently implemented for Windows only.",
+      message: "Interactive provider launch is currently implemented for Windows only.",
     };
   }
 
