@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { SimulatorRunResult } from "../shared/domain";
+import { runRendererSimulator } from "./simulatorFallback";
 
 const navItems = ["Projects", "Tasks", "Agents", "Runs", "History", "Settings"];
 
@@ -8,18 +9,21 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const bridgeAvailable = useMemo(
+    () => Boolean(window.cockpit?.runSimulator),
+    [],
+  );
+
   async function runSimulator() {
     setRunning(true);
     setError(null);
 
     try {
-      if (!window.cockpit?.runSimulator) {
-        throw new Error(
-          "Electron preload bridge is unavailable. Restart the app after rebuilding the preload bundle.",
-        );
+      if (window.cockpit?.runSimulator) {
+        setResult(await window.cockpit.runSimulator());
+      } else {
+        setResult(await runRendererSimulator());
       }
-
-      setResult(await window.cockpit.runSimulator());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -39,8 +43,8 @@ export function App() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span className="dot neutral" />
-          Provider discovery not built yet
+          <span className={bridgeAvailable ? "dot pass" : "dot neutral"} />
+          {bridgeAvailable ? "Electron bridge connected" : "Simulator fallback mode"}
         </div>
       </aside>
 
@@ -71,6 +75,14 @@ export function App() {
                 <h1>Deterministic orchestration proof</h1>
               </div>
             </div>
+
+            {!bridgeAvailable && (
+              <div className="notice">
+                Electron preload is not connected on this machine. The simulator is
+                running in safe renderer fallback mode. Filesystem, Git, terminal,
+                and provider actions remain disabled until the Electron bridge is fixed.
+              </div>
+            )}
 
             {!result && !error && (
               <div className="empty">
@@ -123,10 +135,11 @@ export function App() {
             </section>
 
             <section>
-              <span className="eyebrow">CURRENT LIMITATIONS</span>
+              <span className="eyebrow">RUNTIME MODE</span>
               <p className="muted">
-                SQLite persistence, Git worktrees, real provider adapters, terminal,
-                diff viewer, and browser verification are not built yet.
+                {bridgeAvailable
+                  ? "Electron preload bridge connected."
+                  : "Safe renderer simulator fallback. Privileged local actions are unavailable."}
               </p>
             </section>
           </aside>

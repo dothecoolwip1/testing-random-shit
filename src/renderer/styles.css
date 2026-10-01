@@ -87,6 +87,16 @@ nav { display: grid; gap: 4px; }
 .timeline-panel { padding: 24px; }
 .panel-heading h1 { margin: 6px 0 24px; font-size: 22px; }
 
+.notice {
+  margin-bottom: 16px;
+  border: 1px solid #3f4752;
+  background: #151a20;
+  padding: 12px 14px;
+  color: #c3c9d1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .empty,
 .error {
   border: 1px dashed #343b45;
