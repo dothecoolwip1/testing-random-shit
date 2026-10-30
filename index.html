@@ -1185,9 +1185,9 @@ if (SHARED) {
   }).catch(() => { $('nophoto').hidden = false; });
 } else {
   BASES = {
-    'Google satellite': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains:'0123', maxNativeZoom:21, maxZoom:22, keepBuffer:4, attribution:'Imagery &copy; Google' }),
-    'Google + roads': L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains:'0123', maxNativeZoom:21, maxZoom:22, keepBuffer:4, attribution:'Imagery &copy; Google' }),
-    'Esri satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom:19, maxZoom:22, keepBuffer:4, attribution:'Imagery &copy; Esri, Maxar' }),
+    'Google satellite': L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains:'0123', maxNativeZoom:21, maxZoom:22, keepBuffer:4, crossOrigin:'anonymous', attribution:'Imagery &copy; Google' }),
+    'Google + roads': L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains:'0123', maxNativeZoom:21, maxZoom:22, keepBuffer:4, crossOrigin:'anonymous', attribution:'Imagery &copy; Google' }),
+    'Esri satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom:19, maxZoom:22, keepBuffer:4, crossOrigin:'anonymous', attribution:'Imagery &copy; Esri, Maxar' }),
   };
   let warned = false;
   Object.values(BASES).forEach(l => l.on('tileerror', () => { if (!warned) { warned = true; toast("Satellite imagery couldn't load. Check your internet connection."); } }));
@@ -2128,44 +2128,113 @@ $('export-png').onclick = async () => {
   try { await offer(`site-plan-${stamp()}.png`, await canvasBlob(composeView(2), 'image/png')); }
   catch (e) { toast(SHARED ? "Couldn't build the image" : "The browser blocked copying the satellite photo. Use Export PDF instead."); }
 };
+// Lay the map out at a fixed page-shaped size, fit the plan, wait for imagery, and snapshot it.
+async function renderForExport(W, H) {
+  const el = map.getContainer(), oldCss = el.style.cssText, oldC = map.getCenter(), oldZ = map.getZoom();
+  el.style.cssText = `position:fixed;left:0;top:0;right:auto;bottom:auto;width:${W}px;height:${H}px`;
+  try {
+    map.invalidateSize({ animate:false });
+    const pts = [], vis = areas.filter(areaVisible);
+    if (areaFilter === 'all' || !vis.length) buildings.forEach(b => corners(b).forEach(c => pts.push(c)));
+    vis.forEach(a => areaPairs(a).forEach(([e, n]) => pts.push(toLatLng(e, n))));
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding:[50, 50], maxZoom:21, animate:false });
+    const base = BASES && BASES[activeBase];
+    if (base && base.isLoading && base.isLoading()) await new Promise(res => { base.once('load', res); setTimeout(res, 6000); });
+    await new Promise(r => setTimeout(r, 120));
+    drawPaint();
+    return composeView(2);
+  } finally {
+    el.style.cssText = oldCss; map.invalidateSize({ animate:false }); map.setView(oldC, oldZ, { animate:false }); drawPaint();
+  }
+}
 $('export-pdf').onclick = async () => {
+  if (!window.jspdf) { toast('The PDF maker is still loading. Try again in a moment.'); return; }
+  toast('Making PDF…', 8000);
   let c = null, data = null;
-  try { c = composeView(2); data = c.toDataURL('image/jpeg', 0.92); } catch (e) { c = null; }
-  if (!c || !window.jspdf) {
+  try { c = await renderForExport(1100, 800); data = c.toDataURL('image/jpeg', 0.9); } catch (e) { c = null; }
+  if (!c) {
     if (!SHARED) { closeSheet(); preparePrint(); toast('Choose "Save as PDF" as the printer'); setTimeout(() => window.print(), 300); }
-    else toast('The PDF maker is still loading. Try again in a moment.');
+    else toast("Couldn't build the PDF");
     return;
   }
   try {
+    const ascii = s => String(s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/[^\x20-\x7E\n\xB0]/g, '');
     const pdf = new window.jspdf.jsPDF({ orientation:'landscape', unit:'pt', format:'letter' });
-    const sched = days().filter(d => areaFilter === 'all' || d === areaFilter).map(d => ({ d, list:areas.filter(a => a.date === d) }));
-    const schedLines = sched.reduce((n, x) => n + 1 + x.list.length, 0);
-    const legendH = 46 + Math.ceil(buildings.length / 3) * 12 + (schedLines ? 18 + Math.ceil(schedLines / 2) * 12 : 0);
-    const PW = 792, PH = 612, M = 28, k = Math.min((PW - 2*M) / c.width, (PH - 2*M - legendH) / c.height);
-    pdf.addImage(data, 'JPEG', M, M, c.width*k, c.height*k);
-    const y = M + c.height*k + 20, ascii = s => s.replace(/[^\x20-\x7E]/g, '');
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(12);
-    pdf.text(ascii(`Site plan  ${SITE_LABEL}  ${new Date().toLocaleDateString()}`), M, y);
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9);
-    buildings.forEach((b, i) => {
-      const x = M + (i % 3)*250, yy = y + 14 + Math.floor(i / 3)*12;
-      pdf.setFillColor(b.color); pdf.rect(x, yy - 7, 7, 7, 'F');
-      pdf.text(ascii(`${b.name}: ${b.shape === 'circle' ? fmt(b.w) + ' ft diameter' : fmt(b.w) + ' x ' + fmt(b.l) + ' ft'}`), x + 11, yy);
-    });
-    if (schedLines) {
-      let row = 0, yy0 = y + 14 + Math.ceil(buildings.length / 3)*12 + 10;
-      pdf.setFont('helvetica', 'bold'); pdf.text('Cleanup schedule', M, yy0); pdf.setFont('helvetica', 'normal');
-      const lines = [];
-      sched.forEach(({ d, list }) => { lines.push({ text:dayLong(d), bold:true, color:dayColor(d) }); list.forEach(a => lines.push({ text:`   ${a.done ? '[done] ' : '[  ] '}${a.name} - ${sqft(areaSqFt(a))}` })); });
-      const per = Math.ceil(lines.length / 2);
-      lines.forEach((ln, i) => {
-        const x = M + (i >= per ? 370 : 0), yy = yy0 + 14 + (i % per)*12;
-        if (ln.color) { pdf.setFillColor(ln.color); pdf.rect(x, yy - 7, 7, 7, 'F'); }
-        pdf.setFont('helvetica', ln.bold ? 'bold' : 'normal'); pdf.text(ascii(ln.text), x + (ln.color ? 11 : 0), yy);
+    const PW = 792, PH = 612, M = 24, day = areaFilter !== 'all' ? areaFilter : '';
+    const vis = areas.filter(areaVisible), sched = days().filter(d => !day || d === day).map(d => ({ d, list:areas.filter(a => a.date === d) })).filter(x => x.list.length);
+    // Page 1: title line, then the map fills the page.
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14);
+    pdf.text(ascii(day ? `Cleanup - ${dayLong(day)}` : (vis.length ? 'Site plan and cleanup' : 'Site plan')), M, M + 10);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(90);
+    pdf.text(ascii(`${SITE_LABEL}   Printed ${new Date().toLocaleDateString()}`), PW - M, M + 10, { align:'right' });
+    pdf.setTextColor(0);
+    const keyH = sched.length ? 16 : 0, top = M + 20, availW = PW - 2*M, availH = PH - top - M - keyH;
+    const k = Math.min(availW / c.width, availH / c.height), iw = c.width*k, ih = c.height*k, ix = M + (availW - iw)/2;
+    pdf.addImage(data, 'JPEG', ix, top, iw, ih);
+    pdf.setDrawColor(200); pdf.rect(ix, top, iw, ih);
+    if (sched.length) {
+      let x = ix, y = top + ih + 12; pdf.setFontSize(9);
+      sched.forEach(({ d, list }) => {
+        const t = ascii(`${dayShort(d)} (${list.length})`), w = pdf.getTextWidth(t) + 22;
+        if (x + w > PW - M) return;
+        pdf.setFillColor(dayColor(d)); pdf.rect(x, y - 7, 8, 8, 'F'); pdf.text(t, x + 12, y); x += w;
+      });
+      if (sched.length > 0) { pdf.setTextColor(110); pdf.text('Details on the next page', PW - M, y, { align:'right' }); pdf.setTextColor(0); }
+    }
+    // Page 2+: the cleanup list with dates and what to do, then the buildings.
+    let y = 0;
+    const newPage = () => { pdf.addPage('letter', 'portrait'); y = 40; };
+    const PW2 = 612, PH2 = 792, L2 = 40, R2 = PW2 - 40;
+    const col = { box:L2 + 6, name:L2 + 36, note:L2 + 170, size:R2 - 70 };
+    const need = h => { if (y + h > PH2 - 40) { newPage(); header(); } };
+    const header = () => {
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor(110);
+      pdf.text('DONE', L2, y); pdf.text('AREA', col.name, y); pdf.text('WHAT TO DO', col.note, y); pdf.text('SIZE', col.size, y);
+      pdf.setTextColor(0); pdf.setDrawColor(210); pdf.line(L2, y + 5, R2, y + 5); y += 18;
+    };
+    if (sched.length) {
+      newPage();
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16); pdf.text('Cleanup list', L2, y);
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(110);
+      const tot = sched.reduce((n, x) => n + x.list.length, 0), dn = sched.reduce((n, x) => n + x.list.filter(a => a.done).length, 0);
+      pdf.text(ascii(`${tot} area${tot === 1 ? '' : 's'} - ${dn} done`), R2, y, { align:'right' }); pdf.setTextColor(0);
+      y += 26;
+      sched.forEach(({ d, list }) => {
+        need(60);
+        pdf.setFillColor(dayColor(d)); pdf.rect(L2, y - 10, 12, 12, 'F');
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(12); pdf.text(ascii(dayLong(d)), L2 + 18, y);
+        y += 16; header();
+        list.forEach(a => {
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'bold'); const nameL = pdf.splitTextToSize(ascii(a.name), col.note - col.name - 10);
+          pdf.setFont('helvetica', 'normal'); const noteL = a.note ? pdf.splitTextToSize(ascii(a.note), col.size - col.note - 12) : ['-'];
+          const h = Math.max(nameL.length, noteL.length)*12 + 8;
+          need(h);
+          pdf.setDrawColor(120); pdf.rect(col.box, y - 9, 11, 11);
+          if (a.done) { pdf.setLineWidth(1.5); pdf.line(col.box + 2, y - 3, col.box + 5, y); pdf.line(col.box + 5, y, col.box + 10, y - 8); pdf.setLineWidth(1); }
+          pdf.setFont('helvetica', 'bold'); pdf.text(nameL, col.name, y);
+          pdf.setFont('helvetica', 'normal'); if (!a.note) pdf.setTextColor(150); pdf.text(noteL, col.note, y); pdf.setTextColor(0);
+          pdf.text(ascii(sqft(areaSqFt(a))), col.size, y);
+          y += h - 8; pdf.setDrawColor(230); pdf.line(L2, y, R2, y); y += 14;
+        });
+        y += 10;
       });
     }
-    await offer(`site-plan-${stamp()}.pdf`, pdf.output('blob'));
-  } catch (e) { toast("Couldn't build the PDF"); }
+    if (buildings.length) {
+      if (!sched.length) newPage(); else need(40 + buildings.length*14);
+      pdf.setFont('helvetica', 'bold'); pdf.setFontSize(12); pdf.text('Buildings', L2, y); y += 16;
+      pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
+      buildings.forEach(b => {
+        need(14);
+        pdf.setFillColor(b.color); pdf.rect(L2, y - 8, 9, 9, 'F');
+        pdf.text(ascii(`${b.name}: ${b.shape === 'circle' ? fmt(b.w) + ' ft diameter' : fmt(b.w) + ' x ' + fmt(b.l) + ' ft'}`), L2 + 15, y); y += 14;
+      });
+    }
+    const n = pdf.getNumberOfPages();
+    for (let i = 1; i <= n; i++) { pdf.setPage(i); pdf.setFontSize(8); pdf.setTextColor(150); pdf.text(`${i} / ${n}`, (i === 1 ? PW : PW2) - (i === 1 ? M : 40), (i === 1 ? PH : PH2) - 10, { align:'right' }); }
+    pdf.setTextColor(0);
+    await offer(`${day ? 'cleanup-' + day : 'site-plan-' + stamp()}.pdf`, pdf.output('blob'));
+  } catch (e) { console.error(e); toast("Couldn't build the PDF"); }
 };
 
 // Browser print fallback for the file version (browsers often drop map tiles from printouts, so they are copied into a canvas first).
