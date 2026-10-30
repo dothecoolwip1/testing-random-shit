@@ -717,6 +717,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .fab { width:46px; height:46px; border-radius:14px; border:none; background:var(--panel); color:var(--fg); box-shadow:var(--shadow);
          display:grid; place-items:center; padding:0; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
   .fab svg { width:21px; height:21px; }
+  .undo-fab { position:fixed; z-index:900; left:max(12px, env(safe-area-inset-left, 0px)); top:calc(52px + env(safe-area-inset-top, 0px)); }
   .fab[aria-pressed="false"] { color:var(--muted); }
   .fab[aria-pressed="false"] svg { opacity:.55; }
   #zoomfloat { position:fixed; z-index:900; right:max(12px, env(safe-area-inset-right, 0px));
@@ -859,18 +860,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
   /* ---------- map overlays ---------- */
   .label-icon { background:none; border:none; pointer-events:none !important; }
   .label-icon.editing { pointer-events:auto !important; }
-  .bldg-label { position:absolute; transform:translate(-50%,-50%); background:rgba(255,255,255,.95); color:#0f172a; font:700 12px/1.2 var(--font);
-                padding:4px 9px 4px 8px; border-radius:999px; white-space:nowrap; text-align:left; user-select:none; -webkit-user-select:none;
+  .bldg-label { position:absolute; transform:translate(-50%,-50%); background:rgba(255,255,255,.95); color:#0f172a; font:700 11.5px/1.2 var(--font);
+                padding:3px 8px 3px 7px; border-radius:999px; white-space:nowrap; text-align:left; user-select:none; -webkit-user-select:none;
                 box-shadow:0 2px 8px rgba(0,0,0,.35); display:flex; align-items:center; gap:6px; border-left:5px solid var(--c, #999); }
   .bldg-label span { font-weight:500; color:#64748b; }
+  .bldg-label svg { width:11px; height:11px; color:#64748b; }
   .label-icon.editing .bldg-label { outline:2px dashed var(--sel); cursor:grab; padding:8px 12px; }
   .hide-labels .label-icon, .hide-labels .leader, .hide-labels .area-icon { display:none; }
   .area-icon { background:none; border:none; pointer-events:none !important; }
   .area-label { position:absolute; transform:translate(-50%,-50%); background:var(--c); color:#111; font:800 13px/1.15 var(--font); padding:5px 11px; border-radius:12px;
                 white-space:nowrap; text-align:center; box-shadow:0 2px 10px rgba(0,0,0,.4); border:2px solid #fff; }
   .area-label span { display:block; font-weight:600; font-size:11px; opacity:.8; }
-  .area-label.done { background:#e9ecef; color:#495057; text-decoration:line-through; }
-  .area-label.done::after { content:" ✓"; text-decoration:none; }
+  .area-label.done { background:#e9ecef; color:#2f9e44; }
+  .area-label.done span { color:#495057; }
   .sched-day { margin:16px 0 6px; font-weight:700; font-size:15px; display:flex; align-items:center; gap:10px; }
   .sched-day .dot { width:14px; height:14px; border-radius:50%; box-shadow:inset 0 0 0 1px rgba(0,0,0,.15); }
   .sched-day .count { margin-left:auto; font-weight:600; font-size:12px; color:var(--muted); background:var(--chip); padding:3px 9px; border-radius:999px; }
@@ -953,6 +955,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <div id="dayfilter" hidden><span id="dayfilter-text"></span><button id="dayfilter-clear" aria-label="Show all days">✕</button></div>
 <div id="printinfo"></div>
 
+<button class="fab undo-fab" id="fab-undo" hidden title="Undo last change" aria-label="Undo last change">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+  </button>
 <div class="fabs">
   <button class="fab" id="fab-names" aria-pressed="true" title="Show or hide names" aria-label="Show names">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
@@ -1200,8 +1205,13 @@ function saveLocal(fromServer) {
     view:{ center:[map.getCenter().lat, map.getCenter().lng], zoom:map.getZoom() } })); } catch (e) {}
 }
 let lastPlanJSON = '', writing = false, writeAgain = false, writeTimer = null;
+let undoStack = [], lastSnapJSON = null;
+function renderUndo() { const u = $('fab-undo'); if (u) u.hidden = !undoStack.length; }
 function savePlan() {
   busy = false;
+  const now = planJSON();
+  if (lastSnapJSON !== null && now !== lastSnapJSON) { undoStack.push(lastSnapJSON); if (undoStack.length > 40) undoStack.shift(); }
+  lastSnapJSON = now; renderUndo();
   if (pendingPlan) { const p = pendingPlan; pendingPlan = null; applyRemotePlan(p); return; }
   if (!SHARED) { saveLocal(); return; }
   if (!db || !canWrite) return;
@@ -1389,10 +1399,10 @@ function traceTap(p) {
               color:'#ff9f1c', east:+sh.east.toFixed(2), north:+sh.north.toFixed(2), lx:0, ly:0, locked:false };
   buildings.push(b); build(b); applyLabels(); savePlan();
   setTool('move'); select(b.id);
-  toast(`Added ${b.name}. Tap the pencil to rename it.`);
+  toast(`Added ${b.name}. Tap Rename to give it a name.`, 2600);
 }
 map.on('click', e => {
-  if (tool === 'trace') { const f = toFeet(e.latlng); traceTap([+f.east.toFixed(2), +f.north.toFixed(2)]); }
+  if (tool === 'trace') { const f = toFeet(e.latlng); traceTap([+f.east.toFixed(2), +f.north.toFixed(2)]); e.originalEvent._handled = true; }
   else if (tool === 'area') { areaTap(e.latlng); e.originalEvent._handled = true; }
 });
 map.on('mousemove', e => {
@@ -1425,7 +1435,7 @@ function centroid(a) {
 map.createPane('areas').style.zIndex = 380;
 const areaLayers = {};
 const areaIcon = a => L.divIcon({ className:'area-icon', iconSize:[0,0],
-  html:`<div class="area-label${a.done ? ' done' : ''}" style="--c:${dayColor(a.date)}">${esc(dayShort(a.date))}<span>${esc(a.name)}</span></div>` });
+  html:`<div class="area-label${a.done ? ' done' : ''}" style="--c:${dayColor(a.date)}">${a.done ? '✓ ' : ''}${esc(dayShort(a.date))}<span>${esc(a.name)}${a.done ? ' · done' : ''}</span></div>` });
 function drawArea(a) {
   removeArea(a.id);
   if (!areaVisible(a)) return;
@@ -1503,10 +1513,10 @@ function finishArea() {
 // ---------- buildings on the map ----------
 const layers = {};
 const labelIcon = (b, editing) => L.divIcon({ className:'label-icon' + (editing ? ' editing' : ''), iconSize:[0,0],
-  html:`<div class="bldg-label" style="--c:${esc(b.color)}">${esc(b.name)} <span>${dimsText(b)}${b.locked ? ' · locked' : ''}</span></div>` });
+  html:`<div class="bldg-label" style="--c:${esc(b.color)}">${esc(b.name)}${b.locked ? ` ${ICON.lock}` : ''}</div>` });
 
 function build(b) {
-  const poly = L.polygon(corners(b), { smoothFactor:0, color:b.color, weight:2, fillColor:b.color, fillOpacity:.45, interactive:false }).addTo(map);
+  const poly = L.polygon(corners(b), { smoothFactor:0, color:b.color, weight:3, fillColor:b.color, fillOpacity:.5, interactive:false }).addTo(map);
   const leader = L.polyline([], { color:'#fff', weight:2, className:'leader', interactive:false }).addTo(map);
   const head = L.polygon([], { color:'#fff', weight:1, fillColor:'#fff', fillOpacity:1, className:'leader', interactive:false }).addTo(map);
   const label = L.marker(toLatLng(b.east + b.lx, b.north + b.ly), { draggable:true, icon:labelIcon(b, false), zIndexOffset:1000, keyboard:false }).addTo(map);
@@ -1525,7 +1535,7 @@ function refresh(b, skip) {
   const L_ = layers[b.id]; if (!L_) return;
   const sel = b.id === selectedId;
   L_.poly.setLatLngs(corners(b));
-  L_.poly.setStyle({ weight:sel ? 4 : 2, color:sel ? '#ffd84d' : b.color, fillOpacity:sel ? .55 : .45, dashArray:b.locked && sel ? '8 5' : null });
+  L_.poly.setStyle({ weight:sel ? 4 : 3, color:sel ? '#ffd84d' : b.color, fillOpacity:sel ? .55 : .45, dashArray:b.locked && sel ? '8 5' : null });
   // rotate handle only on the selected, unlocked, non-circle building
   const wantRot = sel && !b.locked && b.shape !== 'circle' && tool === 'move';
   if (wantRot && !L_.rot) {
@@ -2238,14 +2248,31 @@ async function pullPlan(first, keepLocal) {
   if (selectedId && !buildings.some(b => b.id === selectedId)) selectedId = null;
   if (selectedAreaId && !areas.some(a => a.id === selectedAreaId)) selectedAreaId = null;
   lastServerJSON = serverPlanJSON(); lastServerAt = d.updatedAt || Date.now();
-  rebuildAll(); saveLocal(true);
+  rebuildAll(); saveLocal(true); lastSnapJSON = planJSON();
+  if (first) fitPlan();
   setSync('Saved. Everyone who opens this link sees the same map.');
   if (!first) toast('Map updated with someone else\u2019s changes', 1800);
 }
 
+$('fab-undo').onclick = () => {
+  const prev = undoStack.pop(); if (!prev) return;
+  const d = JSON.parse(prev);
+  if (labelEditId) stopLabelEdit(true);
+  buildings = normalizeBuildings(d.buildings); areas = normalizeAreas(d.areas); selectedId = null; selectedAreaId = null;
+  lastSnapJSON = prev; rebuildAll(); savePlan(); toast('Undone', 1000);
+};
+// Open on the whole plan, with room left for the panel at the bottom.
+function fitPlan() {
+  const pts = [];
+  buildings.forEach(b => corners(b).forEach(c => pts.push(c)));
+  areas.forEach(a => areaPairs(a).forEach(([e, n]) => pts.push(toLatLng(e, n))));
+  if (!pts.length) return;
+  const dockH = $('dock').getBoundingClientRect().height;
+  map.fitBounds(L.latLngBounds(pts), { paddingTopLeft:[24, 70], paddingBottomRight:[70, dockH + 24], maxZoom:21 });
+}
 // ---------- start ----------
 if (!SHARED) loadLocal();
-rebuildAll(); setTool('move'); showZoom();
+rebuildAll(); setTool('move'); showZoom(); fitPlan(); lastSnapJSON = planJSON();
 if (!SHARED) map.on('moveend', saveLocal);
 if (!SHARED) openLinkPlan().then(linked => pullPlan(true, linked));
 if (SERVER) { setInterval(() => pullPlan(false), 6000); document.addEventListener('visibilitychange', () => pullPlan(false)); }
