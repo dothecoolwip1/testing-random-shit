@@ -845,6 +845,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .chip { min-height:44px; }
   textarea.note { width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--chip); color:var(--fg);
                   font:inherit; font-size:16px; resize:vertical; min-height:48px; }
+  textarea.note.compact { min-height:44px; height:44px; resize:none; transition:height .15s; }
+  textarea.note.compact.open, textarea.note.compact:focus { height:92px; }
   .notebox { background:var(--warn-bg); color:var(--warn-fg); border-radius:12px; padding:10px 12px; font-size:15px; white-space:pre-wrap; }
   .donebtn.big { width:100%; min-height:54px; font-size:16px; }
   .donebtn.big.primary { background:var(--accent); color:var(--accent-fg); }
@@ -889,6 +891,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .bldg-label svg { width:11px; height:11px; color:#64748b; }
   .label-icon.editing .bldg-label { outline:2px dashed var(--sel); cursor:grab; padding:8px 12px; }
   .hide-labels .label-icon, .hide-labels .leader, .hide-labels .area-icon { display:none; }
+  .vx { background:none; border:none; }
+  .vx i { position:absolute; left:50%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:3px solid #1b2127; box-shadow:0 1px 5px rgba(0,0,0,.55); box-sizing:border-box; }
+  .vx.on i { background:#ffd84d; width:22px; height:22px; margin:-11px 0 0 -11px; }
+  .vx.mid i { width:16px; height:16px; margin:-8px 0 0 -8px; background:rgba(255,255,255,.8); border:2px solid #1b2127; }
+  .vx.mid i::before { content:'+'; position:absolute; inset:0; font:800 12px/12px var(--font); text-align:center; color:#1b2127; }
+  .shape-hint { font-size:12px; }
   .area-icon { background:none; border:none; pointer-events:none !important; }
   .area-label { position:absolute; transform:translate(-50%,-50%); background:var(--c); color:#111; font:800 13px/1.15 var(--font); padding:5px 11px; border-radius:12px;
                 white-space:nowrap; text-align:center; box-shadow:0 2px 10px rgba(0,0,0,.4); border:2px solid #fff; }
@@ -1472,9 +1480,44 @@ function drawArea(a) {
   const poly = L.polygon(areaPairs(a).map(([e,n]) => toLatLng(e,n)), { pane:'areas', smoothFactor:0, interactive:false,
     color:sel ? '#ffd84d' : col, weight:sel ? 4 : 3, dashArray:a.done ? '4 6' : '10 6', fillColor:col, fillOpacity:a.done ? .12 : .28 }).addTo(map);
   const label = L.marker(toLatLng(...centroid(a)), { icon:areaIcon(a), interactive:false, keyboard:false, zIndexOffset:500 }).addTo(map);
-  areaLayers[a.id] = { poly, label };
+  areaLayers[a.id] = { poly, label, handles:[] };
+  if (sel && tool === 'move' && !WORKER) addAreaHandles(a);
 }
-function removeArea(id) { const L_ = areaLayers[id]; if (L_) { L_.poly.remove(); L_.label.remove(); delete areaLayers[id]; } }
+let activeVx = null, shapeTipShown = false;   // { id, i } — the corner tapped last, for "Remove corner"
+const vxIcon = (cls) => L.divIcon({ className:'vx' + cls, iconSize:[40, 40], html:'<i></i>' });
+const r1 = v => Math.round(v*10)/10;
+function areaMids(a) { const q = areaPairs(a); return q.map((p, i) => { const n = q[(i+1) % q.length]; return [(p[0] + n[0])/2, (p[1] + n[1])/2]; }); }
+function liveArea(a, skip) {
+  const L_ = areaLayers[a.id]; if (!L_) return;
+  L_.poly.setLatLngs(areaPairs(a).map(([e,n]) => toLatLng(e,n))); L_.label.setLatLng(toLatLng(...centroid(a)));
+  const q = areaPairs(a), m = areaMids(a);
+  L_.handles.forEach(h => { if (h === skip) return; const p = h._mid ? m[h._i] : q[h._i]; if (p) h.setLatLng(toLatLng(...p)); });
+}
+function addAreaHandles(a) {
+  const L_ = areaLayers[a.id], q = areaPairs(a), m = areaMids(a);
+  const stop = e => { if (e.originalEvent) e.originalEvent._handled = true; };
+  q.forEach((p, i) => {
+    const on = activeVx && activeVx.id === a.id && activeVx.i === i;
+    const h = L.marker(toLatLng(...p), { icon:vxIcon(on ? ' on' : ''), draggable:true, keyboard:false, zIndexOffset:900, autoPan:false }).addTo(map);
+    h._i = i;
+    h.on('dragstart', () => { busy = true; });
+    h.on('drag', () => { const f = toFeet(h.getLatLng()); a.p[2*i] = r1(f.east); a.p[2*i+1] = r1(f.north); liveArea(a, h); });
+    h.on('dragend', () => { activeVx = { id:a.id, i }; drawArea(a); renderCtx(); savePlan(); });
+    h.on('click', e => { stop(e); activeVx = on ? null : { id:a.id, i }; drawArea(a); renderCtx(); });
+    L_.handles.push(h);
+  });
+  m.forEach((p, i) => {
+    const h = L.marker(toLatLng(...p), { icon:vxIcon(' mid'), draggable:true, keyboard:false, zIndexOffset:800, autoPan:false }).addTo(map);
+    h._i = i; h._mid = true;
+    const insert = () => { const f = toFeet(h.getLatLng()); a.p.splice(2*i + 2, 0, r1(f.east), r1(f.north)); };
+    h.on('dragstart', () => { busy = true; insert(); h._mid = false; h._i = i + 1; L_.handles.forEach(o => { if (o !== h && o._i > i && !o._mid) o._i++; }); });
+    h.on('drag', () => { const f = toFeet(h.getLatLng()); a.p[2*i+2] = r1(f.east); a.p[2*i+3] = r1(f.north); liveArea(a, h); });
+    h.on('dragend', () => { activeVx = { id:a.id, i:i + 1 }; drawArea(a); renderCtx(); savePlan(); });
+    h.on('click', e => { stop(e); insert(); activeVx = { id:a.id, i:i + 1 }; drawArea(a); renderCtx(); savePlan(); toast('Corner added. Drag it into place.', 1800); });
+    L_.handles.push(h);
+  });
+}
+function removeArea(id) { const L_ = areaLayers[id]; if (L_) { L_.poly.remove(); L_.label.remove(); (L_.handles || []).forEach(h => h.remove()); delete areaLayers[id]; } }
 function drawAllAreas() { Object.keys(areaLayers).forEach(removeArea); areas.forEach(drawArea); renderDayFilter(); }
 function hitTestArea(pt) {
   const vis = areas.filter(areaVisible);
@@ -1484,10 +1527,18 @@ function hitTestArea(pt) {
 }
 function selectArea(id) {
   if (selectedId) { const prev = selectedId; selectedId = null; const b = buildings.find(x => x.id === prev); if (b) refresh(b); }
-  const prevA = selectedAreaId; selectedAreaId = id; renaming = false;
+  const prevA = selectedAreaId; selectedAreaId = id; renaming = false; if (prevA !== id) activeVx = null;
   [prevA, id].forEach(x => { const a = areas.find(y => y.id === x); if (a) drawArea(a); });
   if (id && mode !== 'cleanup') { mode = 'cleanup'; syncTabs(); }
   renderCtx(); renderSchedule();
+  const a = id && areas.find(x => x.id === id);
+  if (a && prevA !== id && !WORKER && !shapeTipShown) { shapeTipShown = true; toast('Drag the dots to reshape. Drag inside the outline to move it.', 3200); }
+  if (a && prevA !== id) requestAnimationFrame(() => {
+    const ys = areaPairs(a).map(([e, n]) => map.latLngToContainerPoint(toLatLng(e, n)).y);
+    const bottom = $('dock').getBoundingClientRect().top - map.getContainer().getBoundingClientRect().top - 24, top = 70;
+    const maxY = Math.max(...ys), minY = Math.min(...ys);
+    if (maxY > bottom) map.panBy([0, Math.max(0, Math.min(maxY - bottom, minY - top))]);
+  });
 }
 function nextDay() {
   const ds = areas.map(a => a.date).filter(Boolean).sort();
@@ -1615,13 +1666,37 @@ function hitTest(pt) {
 
 // Move tool: press on a building and drag it. Press on empty ground pans the map.
 const mc = map.getContainer();
-let grab = null;
+let grab = null, agrab = null;
+mc.addEventListener('pointermove', ev => {
+  if (!agrab || ev.pointerId !== agrab.pid) return;
+  const a = areas.find(x => x.id === agrab.id); if (!a) return;
+  const p = toFeet(map.mouseEventToLatLng(ev)), de = p.east - agrab.start.east, dn = p.north - agrab.start.north;
+  a.p = agrab.p0.map((v, k) => r1(v + (k % 2 ? dn : de))); agrab.moved = true;
+  if (!agrab.raf) agrab.raf = requestAnimationFrame(() => { if (agrab) agrab.raf = 0; liveArea(a); });
+}, true);
+const endAgrab = ev => {
+  if (!agrab || (ev && ev.pointerId !== agrab.pid)) return;
+  try { mc.releasePointerCapture(agrab.pid); } catch (e) {}
+  const a = areas.find(x => x.id === agrab.id), moved = agrab.moved; agrab = null;
+  if (tool === 'move') map.dragging.enable();
+  if (a && moved) { drawArea(a); savePlan(); } else busy = false;
+};
+mc.addEventListener('pointerup', endAgrab, true);
+mc.addEventListener('pointercancel', endAgrab, true);
 mc.addEventListener('pointerdown', ev => {
   if (tool !== 'move' || ev.button > 0) return;
   if (ev.target.closest('.leaflet-marker-icon, .leaflet-control')) return;
   if (grab) { endGrab(); return; }                       // a second finger: stop dragging, let the map pinch
   const pt = map.mouseEventToContainerPoint(ev), b = WORKER ? null : hitTest(pt);
-  if (!b) { const a = hitTestArea(pt); if (a && a.id !== selectedAreaId) selectArea(a.id); return; }
+  if (!b) {
+    const a = hitTestArea(pt); if (!a) return;
+    if (a.id !== selectedAreaId) { selectArea(a.id); return; }
+    if (WORKER) return;
+    map.dragging.disable(); ev.stopPropagation();
+    try { mc.setPointerCapture(ev.pointerId); } catch (e) {}
+    agrab = { id:a.id, pid:ev.pointerId, start:toFeet(map.mouseEventToLatLng(ev)), p0:a.p.slice() };
+    busy = true; return;
+  }
   if (b.id !== selectedId) select(b.id);
   if (b.locked || labelEditId) return;
   map.dragging.disable(); ev.stopPropagation();
@@ -1686,15 +1761,17 @@ function renderCtx() {
     } else {
       c.innerHTML = `${head}<div class="area-edit">
           <label class="datewrap"><span>Clean on</span><input class="datein" id="ab-date" type="date" value="${a.date}" aria-label="Cleanup day"></label>${doneBtn}</div>
-        <textarea id="ab-note" class="note" rows="2" maxlength="500" placeholder="Notes for the worker, e.g. pick up scrap and old boards">${esc(a.note || '')}</textarea>
-        <div class="ctx-row">
-          <button class="btn grow" id="sb-rename">${ICON.pencil}Rename</button>
-          <button class="btn grow danger" id="ab-del">${ICON.trash}Remove</button>
+        <textarea id="ab-note" class="note compact" rows="1" maxlength="500" placeholder="What should the worker do here?">${esc(a.note || '')}</textarea>
+        <div class="toolrow" style="grid-template-columns:repeat(3,1fr)">
+          ${tb('sb-rename', ICON.pencil, 'Rename')}
+          ${tb('ab-vx', ICON.x, activeVx && activeVx.id === a.id ? 'Remove corner' : 'Tap a dot', activeVx && activeVx.id === a.id && a.p.length > 6 ? '' : 'disabled')}
+          ${tb('ab-del', ICON.trash, 'Delete area', '', ' danger')}
         </div>`;
+      $('ab-vx').onclick = () => { if (!activeVx) return; const i = activeVx.i; if (a.p.length <= 6) return; a.p.splice(2*i, 2); activeVx = null; drawArea(a); renderCtx(); renderSchedule(); savePlan(); };
       $('ab-date').onchange = e => { a.date = e.target.value; if (!areaVisible(a)) setFilter('all'); drawAllAreas(); renderSchedule(); renderCtx(); savePlan(); };
       let noteTimer = null;
       const note = $('ab-note');
-      note.onfocus = () => { renaming = true; };
+      note.onfocus = () => { renaming = true; note.classList.add('open'); };
       note.oninput = () => { a.note = note.value; clearTimeout(noteTimer); noteTimer = setTimeout(savePlan, 500); };
       note.onblur = () => { renaming = false; clearTimeout(noteTimer); a.note = note.value; savePlan(); renderSchedule(); };
       $('sb-rename').onclick = () => startRename(a, true);
