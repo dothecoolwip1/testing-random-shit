@@ -829,6 +829,25 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .grid2 .btn { width:100%; justify-content:flex-start; }
 
+
+  /* worker view: only the cleanup list and share */
+  .worker .tab[data-mode="buildings"], .worker .tab[data-mode="draw"] { display:none; }
+  .worker #tabs { grid-template-columns:repeat(2, 1fr); }
+  .alist { max-height:min(34vh, 260px); overflow:auto; overscroll-behavior:contain; margin:0 -4px; padding:0 4px; }
+  .alist .arow { gap:12px; }
+  .alist .arow b { display:flex; align-items:center; gap:7px; }
+  .alist .arow .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .alist .arow span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .check { width:44px; height:44px; flex:none; }
+  .chip { min-height:44px; }
+  textarea.note { width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--chip); color:var(--fg);
+                  font:inherit; font-size:16px; resize:vertical; min-height:48px; }
+  .notebox { background:var(--warn-bg); color:var(--warn-fg); border-radius:12px; padding:10px 12px; font-size:15px; white-space:pre-wrap; }
+  .donebtn.big { width:100%; min-height:54px; font-size:16px; }
+  .donebtn.big.primary { background:var(--accent); color:var(--accent-fg); }
+  .donebtn.big.primary svg { opacity:1; }
+  .donebtn.big[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent-ink); }
+
   /* ---------- detail sheet ---------- */
   #sheet { position:fixed; z-index:1100; left:0; right:0; bottom:0; max-height:86%; display:flex; flex-direction:column;
            background:var(--solid); border-radius:22px 22px 0 0; box-shadow:0 -8px 40px rgba(15,23,42,.3); }
@@ -1055,6 +1074,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
 // Runs two ways from the same code: as a file opened in a browser (live Google imagery, saved in this browser),
 // or as a shared Claude page (a captured satellite photo, layout saved for everyone with edit access).
 const SHARED = !!(window.claude && typeof window.claude.use === 'function');
+const QS = new URLSearchParams(location.search), WORKER = !SHARED && QS.has('worker');
+if (WORKER) document.documentElement.classList.add('worker');
 
 const SITE = [52.347083, -113.786944]; // 52°20'49.5"N 113°47'13.0"W
 const SITE_LABEL = `52°20'49.5"N 113°47'13.0"W`;
@@ -1108,7 +1129,7 @@ function normalizeBuildings(list) {
 }
 function normalizeAreas(list) {
   return (Array.isArray(list) ? list : []).filter(a => a && a.id && Array.isArray(a.p) && a.p.length >= 6)
-    .map(a => ({ id:a.id, name:String(a.name || 'Area'), date:/^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '', done:!!a.done, p:a.p.map(Number) }));
+    .map(a => ({ id:a.id, name:String(a.name || 'Area'), date:/^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : '', done:!!a.done, note:String(a.note || '').slice(0, 500), p:a.p.map(Number) }));
 }
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
@@ -1466,13 +1487,13 @@ function nextDay() {
   const d = parseDay(ds[ds.length - 1]); d.setDate(d.getDate() + 1); return isoDay(d);
 }
 function setFilter(v) {
-  areaFilter = v; try { localStorage.setItem('site-planner-day', v); } catch (e) {}
+  areaFilter = v; if (!WORKER) try { localStorage.setItem('site-planner-day', v); } catch (e) {}
   if (selectedAreaId) { const a = areas.find(x => x.id === selectedAreaId); if (a && !areaVisible(a)) selectedAreaId = null; }
   drawAllAreas(); renderSchedule(); renderCtx();
 }
 function renderDayFilter() {
   const f = $('dayfilter');
-  if (areaFilter === 'all' || !areas.length) { f.hidden = true; return; }
+  if (WORKER || areaFilter === 'all' || !areas.length) { f.hidden = true; return; }
   const list = areas.filter(areaVisible), done = list.filter(a => a.done).length;
   $('dayfilter-text').textContent = `${dayShort(areaFilter)} only · ${done}/${list.length} done`;
   f.hidden = false;
@@ -1503,7 +1524,7 @@ function areaTap(latlng) {
 function finishArea() {
   if (areaPts.length < 3) { toast('Tap at least three points around the area'); return; }
   const n = areas.length + 1;
-  const a = { id:'a' + newId(), name:`Area ${n}`, date:nextDay(), done:false, p:areaPts.flat() };
+  const a = { id:'a' + newId(), name:`Area ${n}`, date:nextDay(), done:false, note:'', p:areaPts.flat() };
   areas.push(a); resetAreaDraft();
   if (!areaVisible(a)) setFilter('all');
   setTool('move'); selectArea(a.id); renderSchedule(); savePlan();
@@ -1591,7 +1612,7 @@ mc.addEventListener('pointerdown', ev => {
   if (tool !== 'move' || ev.button > 0) return;
   if (ev.target.closest('.leaflet-marker-icon, .leaflet-control')) return;
   if (grab) { endGrab(); return; }                       // a second finger: stop dragging, let the map pinch
-  const pt = map.mouseEventToContainerPoint(ev), b = hitTest(pt);
+  const pt = map.mouseEventToContainerPoint(ev), b = WORKER ? null : hitTest(pt);
   if (!b) { const a = hitTestArea(pt); if (a && a.id !== selectedAreaId) selectArea(a.id); return; }
   if (b.id !== selectedId) select(b.id);
   if (b.locked || labelEditId) return;
@@ -1646,24 +1667,36 @@ function renderCtx() {
   if (!selA && !selB && tool === 'move' && mode !== 'draw' && !panelOpen) { c.innerHTML = ''; setDockHeight(); return; }
   if (selA) {
     const a = selA;
-    c.innerHTML = `<div class="selbar">
-        <div class="who" id="who"><span class="sw" style="background:${dayColor(a.date)}"></span><div><b>${esc(a.name)}</b><span>${sqft(areaSqFt(a))} · ${esc(dayLong(a.date))}</span></div></div>
-        ${closeX('ctx-close')}
-      </div><div class="area-edit">
-        <label class="datewrap"><span>Clean on</span><input class="datein" id="ab-date" type="date" value="${a.date}" aria-label="Cleanup day"></label>
-        <button class="btn donebtn" id="ab-done" aria-pressed="${a.done}">${ICON.check}<span>${a.done ? 'Done' : 'Mark done'}</span></button>
-      </div><div class="ctx-row">
-        <button class="btn grow" id="sb-rename">${ICON.pencil}Rename</button>
-        <button class="btn grow danger" id="ab-del">${ICON.trash}Remove</button>
-      </div>`;
+    const head = `<div class="selbar">
+        <div class="who" id="who"><span class="sw" style="background:${dayColor(a.date)}"></span><div><b>${esc(a.name)}</b><span>${esc(dayLong(a.date))} · ${sqft(areaSqFt(a))}</span></div></div>
+        ${closeX('ctx-close')}</div>`;
+    const doneBtn = WORKER
+      ? `<button class="btn donebtn big${a.done ? '' : ' primary'}" id="ab-done" aria-pressed="${a.done}">${ICON.check}<span>${a.done ? 'Done · tap to undo' : 'Mark done'}</span></button>`
+      : `<button class="btn donebtn" id="ab-done" aria-pressed="${a.done}">${ICON.check}<span>${a.done ? 'Done' : 'Mark done'}</span></button>`;
+    if (WORKER) {
+      c.innerHTML = `${head}${a.note ? `<div class="notebox">${esc(a.note)}</div>` : '<div class="ctx-hint">No notes for this area. Clean up everything inside the outline.</div>'}${doneBtn}`;
+    } else {
+      c.innerHTML = `${head}<div class="area-edit">
+          <label class="datewrap"><span>Clean on</span><input class="datein" id="ab-date" type="date" value="${a.date}" aria-label="Cleanup day"></label>${doneBtn}</div>
+        <textarea id="ab-note" class="note" rows="2" maxlength="500" placeholder="Notes for the worker, e.g. pick up scrap and old boards">${esc(a.note || '')}</textarea>
+        <div class="ctx-row">
+          <button class="btn grow" id="sb-rename">${ICON.pencil}Rename</button>
+          <button class="btn grow danger" id="ab-del">${ICON.trash}Remove</button>
+        </div>`;
+      $('ab-date').onchange = e => { a.date = e.target.value; if (!areaVisible(a)) setFilter('all'); drawAllAreas(); renderSchedule(); renderCtx(); savePlan(); };
+      let noteTimer = null;
+      const note = $('ab-note');
+      note.onfocus = () => { renaming = true; };
+      note.oninput = () => { a.note = note.value; clearTimeout(noteTimer); noteTimer = setTimeout(savePlan, 500); };
+      note.onblur = () => { renaming = false; clearTimeout(noteTimer); a.note = note.value; savePlan(); renderSchedule(); };
+      $('sb-rename').onclick = () => startRename(a, true);
+      $('ab-del').onclick = ev => {
+        if (!armed(ev.currentTarget, 'Tap again to remove')) return;
+        removeArea(a.id); areas = areas.filter(x => x !== a); selectedAreaId = null; renderCtx(); renderSchedule(); renderDayFilter(); savePlan(); toast(`Removed ${a.name}`);
+      };
+    }
     $('ctx-close').onclick = () => selectArea(null);
-    $('ab-date').onchange = e => { a.date = e.target.value; if (!areaVisible(a)) setFilter('all'); drawAllAreas(); renderSchedule(); renderCtx(); savePlan(); };
     $('ab-done').onclick = () => { a.done = !a.done; drawArea(a); renderSchedule(); renderDayFilter(); renderCtx(); savePlan(); toast(a.done ? `${a.name} marked done` : `${a.name} marked not done`, 1500); };
-    $('sb-rename').onclick = () => startRename(a, true);
-    $('ab-del').onclick = ev => {
-      if (!armed(ev.currentTarget, 'Tap again to remove')) return;
-      removeArea(a.id); areas = areas.filter(x => x !== a); selectedAreaId = null; renderCtx(); renderSchedule(); renderDayFilter(); savePlan(); toast(`Removed ${a.name}`);
-    };
   } else if (selB && labelEditId === selB.id) {
     const b = selB;
     c.innerHTML = `<div class="selbar"><div class="who"><span class="sw" style="background:${esc(b.color)}"></span><div><b>Drag the label where you want it</b><span>An arrow points back to ${esc(b.name)}.</span></div></div></div>
@@ -1741,17 +1774,29 @@ function renderCtx() {
     c.querySelectorAll('[data-dt]').forEach(el => el.onclick = () => setTool(el.dataset.dt));
     $('undo').onclick = undoPaint;
   } else if (mode === 'cleanup') {
-    const ds = days(), done = areas.filter(a => a.done).length;
+    const ds = days(), shown = areas.filter(areaVisible), done = shown.filter(a => a.done).length;
     const chip = (v, dot, label, sub) => `<button class="chip" data-day="${v}" aria-pressed="${areaFilter === v}">${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${label}${sub ? ` <small>${sub}</small>` : ''}</button>`;
-    c.innerHTML = `<div class="ctx-title">Cleanup plan <small>${areas.length ? `${areas.length} area${areas.length > 1 ? 's' : ''} · ${done} done` : 'Nothing planned yet'}</small>${closeX('ctx-close')}</div>
-      ${areas.length ? `<div class="chips">${chip('all', '', 'All days', '')}${ds.map(d => { const l = areas.filter(a => a.date === d); return chip(d, dayColor(d), esc(dayShort(d)), `${l.filter(a => a.done).length}/${l.length}`); }).join('')}</div>`
-        : '<div class="ctx-hint">Outline a patch of ground and give it a cleanup day. The next one gets the day after.</div>'}
-      <div class="ctx-row"><button class="btn primary grow" id="m-area">${ICON.plus}Outline area</button>
-        <button class="btn" id="m-sched" ${areas.length ? '' : 'disabled'}>${ICON.list}Schedule</button></div>`;
-    c.querySelectorAll('[data-day]').forEach(el => el.onclick = () => setFilter(el.dataset.day));
+    const title = WORKER ? (areaFilter === 'all' ? 'Cleanup list' : `Cleanup · ${parseDay(areaFilter).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' })}`) : 'Cleanup plan';
+    const rows = shown.slice().sort((x, y) => (x.date || '9').localeCompare(y.date || '9')).map(a => `<div class="arow${a.done ? ' done' : ''}">
+        <button class="check" data-adone="${a.id}" aria-pressed="${a.done}" aria-label="Mark ${esc(a.name)} done">${ICON.check}</button>
+        <button class="pick" data-apick="${a.id}"><b><span class="dot" style="background:${dayColor(a.date)}"></span>${esc(a.name)}${areaFilter === 'all' ? ` · ${esc(dayShort(a.date))}` : ''}</b><span>${a.note ? esc(a.note) : sqft(areaSqFt(a))}</span></button></div>`).join('');
+    c.innerHTML = `<div class="ctx-title">${esc(title)} <small>${shown.length ? `${done} of ${shown.length} done` : ''}</small>${closeX('ctx-close')}</div>
+      ${ds.length > 1 && !(WORKER && QS.get('day')) ? `<div class="chips">${chip('all', '', 'All days', '')}${ds.map(d => { const l = areas.filter(a => a.date === d); return chip(d, dayColor(d), esc(dayShort(d)), `${l.filter(a => a.done).length}/${l.length}`); }).join('')}</div>` : ''}
+      ${shown.length ? `<div class="alist">${rows}</div>` : `<div class="ctx-hint">${WORKER ? 'Nothing to clean up for this day.' : 'Outline a patch of ground and give it a cleanup day. Each new area gets the day after the last one.'}</div>`}
+      ${WORKER ? '' : `<div class="ctx-row"><button class="btn primary grow" id="m-area">${ICON.plus}Outline area</button>
+        ${SERVER && areas.length ? `<button class="btn soft grow" id="m-send">${ICON.link}Send to worker</button>` : ''}</div>`}`;
     $('ctx-close').onclick = closePanel;
-    $('m-area').onclick = () => setTool('area');
-    $('m-sched').onclick = () => openSheet('cleanup');
+    c.querySelectorAll('[data-day]').forEach(el => el.onclick = () => setFilter(el.dataset.day));
+    c.querySelectorAll('[data-adone]').forEach(el => el.onclick = () => {
+      const a = areas.find(x => x.id === el.dataset.adone); a.done = !a.done; drawArea(a); renderSchedule(); renderDayFilter(); renderCtx(); savePlan();
+      toast(a.done ? `${a.name} marked done` : `${a.name} marked not done`, 1300);
+    });
+    c.querySelectorAll('[data-apick]').forEach(el => el.onclick = () => {
+      const a = areas.find(x => x.id === el.dataset.apick); selectArea(a.id);
+      map.fitBounds(L.latLngBounds(areaPairs(a).map(([e,n]) => toLatLng(e,n))), { paddingTopLeft:[30, 70], paddingBottomRight:[70, $('dock').getBoundingClientRect().height + 30], maxZoom:21 });
+    });
+    if ($('m-area')) $('m-area').onclick = () => setTool('area');
+    if ($('m-send')) $('m-send').onclick = sendToWorker;
     const on = c.querySelector('.chip[aria-pressed="true"]'); if (on) on.scrollIntoView({ inline:'nearest', block:'nearest' });
   } else if (mode === 'share') {
     const items = [['share-link', ICON.link, 'Send share link'], ['export-pdf', ICON.file, 'Export PDF'], ['export-png', ICON.image, 'Export image'],
@@ -1921,7 +1966,7 @@ function renderSchedule() {
   $('sched').innerHTML = ds.filter(d => areaFilter === 'all' || d === areaFilter).map(d => {
     const list = areas.filter(a => a.date === d), done = list.filter(a => a.done).length;
     return `<div class="sched-day"><span class="dot" style="background:${dayColor(d)}"></span>${esc(dayLong(d))}<span class="count">${done}/${list.length} done</span></div>` +
-      list.map(a => `<div class="arow${a.done ? ' done' : ''}"><button class="pick" data-area="${a.id}"><b>${esc(a.name)}${a.id === selectedAreaId ? ' · selected' : ''}</b><span>${sqft(areaSqFt(a))}</span></button>
+      list.map(a => `<div class="arow${a.done ? ' done' : ''}"><button class="pick" data-area="${a.id}"><b>${esc(a.name)}${a.id === selectedAreaId ? ' · selected' : ''}</b><span>${a.note ? esc(a.note) : sqft(areaSqFt(a))}</span></button>
         <button class="check" data-done="${a.id}" aria-pressed="${a.done}" aria-label="Mark ${esc(a.name)} done">${ICON.check}</button></div>`).join('');
   }).join('');
   if (mode === 'cleanup' && tool === 'move' && !selectedAreaId && !renaming) renderCtx();
@@ -2264,17 +2309,35 @@ $('fab-undo').onclick = () => {
 // Open on the whole plan, with room left for the panel at the bottom.
 function fitPlan() {
   const pts = [];
-  buildings.forEach(b => corners(b).forEach(c => pts.push(c)));
-  areas.forEach(a => areaPairs(a).forEach(([e, n]) => pts.push(toLatLng(e, n))));
+  if (!WORKER || !areas.some(areaVisible)) buildings.forEach(b => corners(b).forEach(c => pts.push(c)));
+  areas.filter(a => !WORKER || areaVisible(a)).forEach(a => areaPairs(a).forEach(([e, n]) => pts.push(toLatLng(e, n))));
   if (!pts.length) return;
   const dockH = $('dock').getBoundingClientRect().height;
   map.fitBounds(L.latLngBounds(pts), { paddingTopLeft:[24, 70], paddingBottomRight:[70, dockH + 24], maxZoom:21 });
+}
+// A link for the person doing the cleanup: opens straight to the list, with buildings locked.
+async function sendToWorker() {
+  const day = areaFilter !== 'all' ? areaFilter : '';
+  const list = areas.filter(a => !day || a.date === day);
+  const url = `${location.origin}${location.pathname}?worker=1${day ? `&day=${day}` : ''}`;
+  const text = day ? `Cleanup for ${dayLong(day)}: ${list.length} area${list.length === 1 ? '' : 's'} marked on the map. Tap an area to see what to do, then tap Mark done.`
+                   : `Cleanup list: ${list.length} area${list.length === 1 ? '' : 's'} marked on the map by day. Tap an area to see what to do, then tap Mark done.`;
+  if (navigator.share && matchMedia('(pointer:coarse)').matches) {
+    try { await navigator.share({ title:'Cleanup map', text, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(`${text}\n${url}`); toast(day ? `Link for ${dayShort(day)} copied. Paste it in a text.` : 'Link copied. Paste it in a text.', 3000); }
+  catch (e) { prompt('Copy this link:', url); }
 }
 // ---------- start ----------
 if (!SHARED) loadLocal();
 rebuildAll(); setTool('move'); showZoom(); fitPlan(); lastSnapJSON = planJSON();
 if (!SHARED) map.on('moveend', saveLocal);
-if (!SHARED) openLinkPlan().then(linked => pullPlan(true, linked));
+if (WORKER) {
+  mode = 'cleanup'; panelOpen = true;
+  const day = QS.get('day'); if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) areaFilter = day;
+  syncTabs(); drawAllAreas(); renderCtx();
+}
+if (!SHARED) openLinkPlan().then(linked => pullPlan(true, linked).then(() => { if (WORKER) { drawAllAreas(); renderCtx(); fitPlan(); } }));
 if (SERVER) { setInterval(() => pullPlan(false), 6000); document.addEventListener('visibilitychange', () => pullPlan(false)); }
 window.addEventListener('resize', () => { setDockHeight(); if (!$('sheet').hidden) $('scrim').hidden = wide(); });
 
