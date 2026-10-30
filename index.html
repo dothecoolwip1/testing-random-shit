@@ -689,7 +689,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     --warn-bg:#fff4cc; --warn-fg:#5c4600; --danger:#dc2626; --danger-soft:#fde8e8; --ground:#c9ccc2;
     --shadow:0 8px 28px rgba(15,23,42,.18), 0 1px 3px rgba(15,23,42,.12);
     --font:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --r:18px; --tabs-h:62px;
+    --r:18px; --tabs-h:58px;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     --panel:rgba(22,27,34,.94); --solid:#161b22; --chip:#222a33; --chip-2:#2d3640; --fg:#e8edf2; --muted:#94a3b8; --line:#2d3640;
@@ -746,7 +746,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
           border-radius:var(--r) var(--r) 0 0; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
           padding:0 max(10px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(10px, env(safe-area-inset-left, 0px)); }
   #banner { margin:10px 4px 0; padding:8px 12px; border-radius:12px; background:var(--warn-bg); color:var(--warn-fg); font-size:13px; }
-  #ctx { padding:12px 4px 4px; display:flex; flex-direction:column; gap:10px; }
+  #ctx { padding:2px 4px 6px; display:flex; flex-direction:column; gap:10px; }
   #ctx:empty { display:none; }
   .ctx-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
   .ctx-hint { font-size:13px; color:var(--muted); min-height:1.2em; }
@@ -756,6 +756,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .ctx-title .close-x { margin-left:auto; }
   .ctx-title .close-x svg { width:16px; height:16px; color:var(--muted); }
   .ctx-title small { font-weight:500; font-size:13px; color:var(--muted); margin-left:auto; }
+  #grab { display:block; width:100%; height:20px; border:none; background:none; padding:0; margin:0; position:relative; touch-action:none; }
+  #grab::before { content:""; position:absolute; left:50%; top:7px; width:38px; height:5px; margin-left:-19px; border-radius:3px; background:var(--chip-2); }
+  #ctx:empty + #tabs { border-top:none; }
+  #dock, .fabs, #zoomfloat, .leaflet-control-container { transition:opacity .2s ease; }
+  body.map-busy #dock { opacity:.15; pointer-events:none; }
+  body.map-busy .fabs, body.map-busy #zoomfloat { opacity:.35; }
   #tabs { display:grid; grid-template-columns:repeat(4, 1fr); height:var(--tabs-h); border-top:1px solid var(--line); margin:0 -4px; }
   .tab { border:none; background:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-size:11.5px;
          font-weight:600; color:var(--muted); padding:0; position:relative; }
@@ -905,13 +911,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   /* ---------- wider screens ---------- */
   @media (min-width:900px) {
-    #dock { left:50%; right:auto; transform:translateX(-50%); width:620px; bottom:16px; border-radius:var(--r); }
+    #dock { left:50%; right:auto; transform:translateX(-50%); width:460px; bottom:16px; border-radius:var(--r); }
+    #grab { display:none; }
+    #ctx { padding-top:12px; }
+    :root { --tabs-h:54px; }
+    .tab { flex-direction:row; gap:7px; font-size:13px; }
+    .tab svg { width:19px; height:19px; }
     #zoomfloat { bottom:auto; top:calc(12px + 112px + 62px); }
     .leaflet-bottom.leaflet-right { bottom:4px; }
     #sheet { left:auto; top:12px; right:12px; bottom:12px; width:380px; max-height:none; border-radius:20px; }
     #sheet::before { display:none; }
     #sheet header { padding-top:16px; }
     body.sheet-open #dock { left:calc(50% - 196px); }
+    .btn, .icon-btn { min-height:40px; } .icon-btn { width:40px; min-width:40px; height:40px; } .toolrow .tb { min-height:50px; }
     body.sheet-open .fabs, body.sheet-open #zoomfloat, body.sheet-open .leaflet-top.leaflet-right { right:404px; }
     #scrim { display:none !important; }
     #toast { max-width:480px; }
@@ -957,6 +969,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 </div>
 
 <div id="dock">
+  <button id="grab" aria-label="Show or hide options"></button>
   <p id="banner" hidden></p>
   <div id="ctx"></div>
   <nav id="tabs" aria-label="Modes">
@@ -1181,7 +1194,8 @@ function loadLocal() {
     }
   } catch (e) {}
 }
-function saveLocal() {
+function saveLocal(fromServer) {
+  if (!fromServer) queuePush();
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify({ version:5, buildings, areas, strokes,
     view:{ center:[map.getCenter().lat, map.getCenter().lng], zoom:map.getZoom() } })); } catch (e) {}
 }
@@ -1591,7 +1605,7 @@ function endGrab() {
 }
 mc.addEventListener('pointerup', ev => { if (grab && ev.pointerId === grab.pid) endGrab(); }, true);
 mc.addEventListener('pointercancel', ev => { if (grab && ev.pointerId === grab.pid) endGrab(); }, true);
-map.on('click', e => { if (tool === 'move' && !e.originalEvent._handled && !labelEditId && !hitTest(e.containerPoint) && !hitTestArea(e.containerPoint)) select(null); });
+map.on('click', e => { if (tool === 'move' && !e.originalEvent._handled && !labelEditId && !hitTest(e.containerPoint) && !hitTestArea(e.containerPoint)) { panelOpen = false; select(null); } });
 
 function select(id) {
   if (labelEditId && labelEditId !== id) stopLabelEdit(true);
@@ -1619,6 +1633,7 @@ function renderCtx() {
   const c = $('ctx');
   const selA = tool === 'move' && areas.find(x => x.id === selectedAreaId);
   const selB = tool === 'move' && buildings.find(x => x.id === selectedId);
+  if (!selA && !selB && tool === 'move' && mode !== 'draw' && !panelOpen) { c.innerHTML = ''; setDockHeight(); return; }
   if (selA) {
     const a = selA;
     c.innerHTML = `<div class="selbar">
@@ -1718,12 +1733,13 @@ function renderCtx() {
   } else if (mode === 'cleanup') {
     const ds = days(), done = areas.filter(a => a.done).length;
     const chip = (v, dot, label, sub) => `<button class="chip" data-day="${v}" aria-pressed="${areaFilter === v}">${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${label}${sub ? ` <small>${sub}</small>` : ''}</button>`;
-    c.innerHTML = `<div class="ctx-title">Cleanup plan <small>${areas.length ? `${areas.length} area${areas.length > 1 ? 's' : ''} · ${done} done` : 'Nothing planned yet'}</small></div>
+    c.innerHTML = `<div class="ctx-title">Cleanup plan <small>${areas.length ? `${areas.length} area${areas.length > 1 ? 's' : ''} · ${done} done` : 'Nothing planned yet'}</small>${closeX('ctx-close')}</div>
       ${areas.length ? `<div class="chips">${chip('all', '', 'All days', '')}${ds.map(d => { const l = areas.filter(a => a.date === d); return chip(d, dayColor(d), esc(dayShort(d)), `${l.filter(a => a.done).length}/${l.length}`); }).join('')}</div>`
         : '<div class="ctx-hint">Outline a patch of ground and give it a cleanup day. The next one gets the day after.</div>'}
       <div class="ctx-row"><button class="btn primary grow" id="m-area">${ICON.plus}Outline area</button>
         <button class="btn" id="m-sched" ${areas.length ? '' : 'disabled'}>${ICON.list}Schedule</button></div>`;
     c.querySelectorAll('[data-day]').forEach(el => el.onclick = () => setFilter(el.dataset.day));
+    $('ctx-close').onclick = closePanel;
     $('m-area').onclick = () => setTool('area');
     $('m-sched').onclick = () => openSheet('cleanup');
     const on = c.querySelector('.chip[aria-pressed="true"]'); if (on) on.scrollIntoView({ inline:'nearest', block:'nearest' });
@@ -1731,16 +1747,16 @@ function renderCtx() {
     const items = [['share-link', ICON.link, 'Send share link'], ['export-pdf', ICON.file, 'Export PDF'], ['export-png', ICON.image, 'Export image'],
                    ['save-file', ICON.save, 'Save map file'], ['open-file', ICON.file, 'Open map file'], ['more', ICON.more, 'More']]
       .filter(([id]) => id === 'more' || !$(id).hidden);
-    c.innerHTML = `<div class="ctx-title">Share and save</div><div class="grid2">${items.map(([id, i, t], k) =>
+    c.innerHTML = `<div class="ctx-title">Share and save ${closeX('ctx-close')}</div><div class="grid2">${items.map(([id, i, t], k) =>
       `<button class="btn${k === 0 && id === 'share-link' ? ' primary' : ''}" data-proxy="${id}">${i}${t}</button>`).join('')}</div>`;
+    $('ctx-close').onclick = closePanel;
     c.querySelectorAll('[data-proxy]').forEach(el => el.onclick = () => el.dataset.proxy === 'more' ? openSheet('share') : $(el.dataset.proxy).click());
   } else {
-    c.innerHTML = `<div class="chips">${buildings.map(b => `<button class="chip" data-b="${b.id}"><span class="dot" style="background:${esc(b.color)}"></span>${esc(b.name)}${b.locked ? ICON.lock : ''}</button>`).join('')}</div>
+    c.innerHTML = `<div class="ctx-title">Buildings <small>Tap one on the map to move it</small>${closeX('ctx-close')}</div>
       <div class="ctx-row"><button class="btn primary grow" id="m-add">${ICON.plus}Add building</button>
         <button class="btn grow" id="m-trace">${ICON.trace}Trace</button>
-        <button class="icon-btn" id="m-list" aria-label="All buildings" title="All buildings">${ICON.list}</button></div>
-      <div class="ctx-hint">Tap a building on the map, then drag it into place.</div>`;
-    c.querySelectorAll('[data-b]').forEach(el => el.onclick = () => { const b = buildings.find(x => x.id === el.dataset.b); select(b.id); map.panTo(toLatLng(b.east, b.north)); });
+        <button class="icon-btn" id="m-list" aria-label="All buildings" title="All buildings">${ICON.list}</button></div>`;
+    $('ctx-close').onclick = closePanel;
     $('m-add').onclick = () => { openSheet('buildings'); $('add-h').scrollIntoView({ block:'start' }); setTimeout(() => $('new-name').focus(), 250); };
     $('m-trace').onclick = () => setTool('trace');
     $('m-list').onclick = () => openSheet('buildings');
@@ -1772,7 +1788,12 @@ function startRename(b, isArea) {
 let mode = 'buildings', drawTool = 'draw';
 const MODE_OF = { trace:'buildings', area:'cleanup', draw:'draw', clone:'draw', erase:'draw' };
 function syncTabs() { document.querySelectorAll('.tab').forEach(el => el.setAttribute('aria-pressed', el.dataset.mode === mode)); }
+let panelOpen = false;
+function closePanel() { panelOpen = false; renderCtx(); }
 function setMode(m) {
+  const idleHere = m === mode && tool === 'move' && !selectedId && !selectedAreaId;
+  if (m === 'draw' && mode === 'draw') { panelOpen = false; m = 'buildings'; }
+  else panelOpen = !(idleHere && panelOpen);
   if (m === 'draw') { setTool(drawTool); }
   else {
     if (labelEditId) stopLabelEdit(true);
@@ -1801,6 +1822,32 @@ function setTool(t) {
   renderCtx();
 }
 document.querySelectorAll('.tab').forEach(el => el.onclick = () => setMode(el.dataset.mode));
+
+// While a finger or mouse is dragging on the map, fade the panels so the map shows through.
+{
+  let down = null, busyOn = false;
+  const end = () => { down = null; if (busyOn) { busyOn = false; setTimeout(() => { if (!down) document.body.classList.remove('map-busy'); }, 250); } };
+  $('map').addEventListener('pointerdown', e => { down = { x:e.clientX, y:e.clientY }; }, true);
+  window.addEventListener('pointermove', e => {
+    if (!down || busyOn || Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8) return;
+    busyOn = true; document.body.classList.add('map-busy');
+  }, true);
+  window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
+}
+// The handle on top of the phone panel: tap to open or close, or swipe it up or down.
+{
+  let y0 = null;
+  $('grab').addEventListener('pointerdown', e => { y0 = e.clientY; $('grab').setPointerCapture(e.pointerId); });
+  $('grab').addEventListener('pointerup', e => {
+    if (y0 === null) return; const dy = e.clientY - y0; y0 = null;
+    const open = dy < -20 ? true : dy > 20 ? false : !$('ctx').innerHTML;
+    if (open) { if (!$('ctx').innerHTML) { panelOpen = true; renderCtx(); } }
+    else if (selectedId || selectedAreaId) { panelOpen = false; select(null); }
+    else if (tool !== 'move') { panelOpen = false; setTool('move'); }
+    else if (mode === 'draw') { panelOpen = false; mode = 'buildings'; setTool('move'); }
+    else closePanel();
+  });
+}
 
 // ---------- floating buttons ----------
 const zoomIn = $('zoom-in');
@@ -2152,11 +2199,56 @@ if (!SHARED && /^https?:$/.test(location.protocol)) {
   window.addEventListener('hashchange', openLinkPlan);
 }
 
+
+// ---------- live sync on the hosted site: one shared plan for everyone who opens the link ----------
+let SERVER = !SHARED && /^https?:$/.test(location.protocol);
+let lastServerJSON = null, lastServerAt = 0, pushTimer = null, pushing = false;
+const serverPlanJSON = () => JSON.stringify({ buildings, areas, strokes });
+function queuePush() {
+  if (!SERVER || lastServerJSON === null) return;
+  clearTimeout(pushTimer); pushTimer = setTimeout(pushPlan, 500);
+}
+async function pushPlan() {
+  const json = serverPlanJSON();
+  if (json === lastServerJSON) return;
+  if (pushing) { queuePush(); return; }
+  pushing = true;
+  try {
+    const r = await fetch('/api/plan', { method:'PUT', headers:{ 'content-type':'application/json' }, body:json });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json(); lastServerJSON = json; lastServerAt = d.updatedAt || Date.now();
+    setSync('Saved. Everyone who opens this link sees the same map.');
+  } catch (e) { setSync("Couldn't reach the server. Your changes are saved on this device and will sync when it's back."); setTimeout(queuePush, 5000); }
+  pushing = false;
+}
+function canApplyRemote() { return !busy && !cur && !renaming && !labelEditId && !tracePts.length && !areaPts.length && serverPlanJSON() === lastServerJSON; }
+async function pullPlan(first, keepLocal) {
+  if (!SERVER || document.hidden) return;
+  let d;
+  try { const r = await fetch('/api/plan', { cache:'no-store' }); if (!r.ok) throw new Error(r.status); d = await r.json(); }
+  catch (e) { if (first) SERVER = false; return; }
+  if (first && keepLocal) { lastServerAt = (d && d.updatedAt) || 0; lastServerJSON = ''; queuePush(); return; }  // opened from a share link: that layout becomes the shared one
+  if (first && lastServerJSON === null) {
+    if (!d || !Array.isArray(d.buildings)) { lastServerJSON = ''; queuePush(); return; }   // nothing shared yet: this device's map becomes the shared one
+  }
+  if (!d || !Array.isArray(d.buildings) || (d.updatedAt || 0) <= lastServerAt) { if (lastServerJSON === null) lastServerJSON = ''; return; }
+  if (lastServerJSON !== null && !canApplyRemote()) return;
+  buildings = normalizeBuildings(d.buildings); areas = normalizeAreas(d.areas);
+  strokes = (Array.isArray(d.strokes) ? d.strokes : []).map((s, i) => ({ ...s, id:s.id || newId() + i, at:s.at || i }));
+  if (selectedId && !buildings.some(b => b.id === selectedId)) selectedId = null;
+  if (selectedAreaId && !areas.some(a => a.id === selectedAreaId)) selectedAreaId = null;
+  lastServerJSON = serverPlanJSON(); lastServerAt = d.updatedAt || Date.now();
+  rebuildAll(); saveLocal(true);
+  setSync('Saved. Everyone who opens this link sees the same map.');
+  if (!first) toast('Map updated with someone else\u2019s changes', 1800);
+}
+
 // ---------- start ----------
 if (!SHARED) loadLocal();
 rebuildAll(); setTool('move'); showZoom();
 if (!SHARED) map.on('moveend', saveLocal);
-if (!SHARED) openLinkPlan();
+if (!SHARED) openLinkPlan().then(linked => pullPlan(true, linked));
+if (SERVER) { setInterval(() => pullPlan(false), 6000); document.addEventListener('visibilitychange', () => pullPlan(false)); }
 window.addEventListener('resize', () => { setDockHeight(); if (!$('sheet').hidden) $('scrim').hidden = wide(); });
 
 if (SHARED) (async () => {
